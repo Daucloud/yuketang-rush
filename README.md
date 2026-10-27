@@ -4,7 +4,7 @@
 
 视频队列无需模型服务；AI 建议需要本机 Node.js 22 和你自己的模型 API key，费用由所配置的提供商收取。视觉模式可跨平台使用，OCR 仅支持 macOS。
 
-[下载最新版本](https://github.com/Daucloud/yuketang-rush/releases/latest) · [MIT 许可证](LICENSE) · [参与开发](CONTRIBUTING.md)
+[下载当前版本](https://github.com/Daucloud/yuketang-rush/releases/tag/v0.2.0) · [MIT 许可证](LICENSE) · [参与开发](CONTRIBUTING.md)
 
 ![作业建议侧栏，全部为示例数据](docs/advice-preview.png)
 
@@ -33,7 +33,7 @@
 
 ## 首次安装
 
-1. 从 [Releases](https://github.com/Daucloud/yuketang-rush/releases/latest) 下载 `yuketang-extension-0.2.0.zip`，解压到固定文件夹。
+1. 从 [Releases](https://github.com/Daucloud/yuketang-rush/releases/tag/v0.2.0) 下载 `yuketang-extension-0.2.0.zip`，解压到固定文件夹。
 2. 在你的 Chrome 打开 `chrome://extensions`，开启「开发者模式」。
 3. 点击「加载已解压的扩展程序」，选择解压后的 `extension` 文件夹。
 4. 登录课程并刷新页面，点击扩展图标打开控制页，读取目录、选择视频并启动队列。
