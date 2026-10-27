@@ -1,0 +1,25 @@
+{
+  "name": "yuketang-rush",
+  "version": "0.2.0",
+  "private": true,
+  "description": "雨课堂静音视频队列与整份作业的模型答案建议",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Daucloud/yuketang-rush.git"
+  },
+  "type": "module",
+  "scripts": {
+    "build:ocr": "mkdir -p .tools && swiftc scripts/ocr.swift -o .tools/ykt-ocr",
+    "start": "node --env-file-if-exists=.env server.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "check": "node scripts/check.mjs",
+    "package": "node scripts/package.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "jsdom": "^26.1.0"
+  }
+}

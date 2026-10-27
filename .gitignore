@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+node_modules/
+*.log
+.DS_Store
+.chrome-profile/
+.tools/
+dist/
+diagnostics/
+HANDOFF.md
+E2E_REPORT.md
+OPEN_SOURCE_RESEARCH.md
