@@ -1,6 +1,11 @@
 // User data is encrypted at rest. The non-extractable AES key belongs to this
 // extension's IndexedDB origin; it is never placed alongside local ciphertext.
 let keyPromise;
+function encode(bytes) {
+  let text='';for(let i=0;i<bytes.length;i+=32768)text+=String.fromCharCode(...bytes.subarray(i,i+32768));
+  return btoa(text);
+}
+const decode=value=>Array.isArray(value)?new Uint8Array(value):Uint8Array.from(atob(value),ch=>ch.charCodeAt(0));
 function encryptionKey() {
   if(keyPromise)return keyPromise;
   keyPromise=(async()=>{
@@ -28,7 +33,7 @@ function encryptionKey() {
 async function encrypt(name,value) {
   const iv=crypto.getRandomValues(new Uint8Array(12));
   const data=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:new TextEncoder().encode(name)},await encryptionKey(),new TextEncoder().encode(JSON.stringify(value)));
-  return {encrypted:1,iv:Array.from(iv),data:Array.from(new Uint8Array(data))};
+  return {encrypted:1,iv:encode(iv),data:encode(new Uint8Array(data))};
 }
 export async function localSet(values) {
   const encrypted={};
@@ -43,7 +48,7 @@ export async function localGet(name) {
     await localSet({[name]:stored});return {[name]:stored};
   }
   try {
-    const plaintext=await crypto.subtle.decrypt({name:'AES-GCM',iv:new Uint8Array(stored.iv),additionalData:new TextEncoder().encode(name)},await encryptionKey(),new Uint8Array(stored.data));
+    const plaintext=await crypto.subtle.decrypt({name:'AES-GCM',iv:decode(stored.iv),additionalData:new TextEncoder().encode(name)},await encryptionKey(),decode(stored.data));
     return {[name]:JSON.parse(new TextDecoder().decode(plaintext))};
   } catch {throw Error('本地数据无法解密，请重新配置模型或清除扩展数据后重试');}
 }

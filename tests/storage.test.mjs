@@ -24,7 +24,7 @@ test('fresh IVs prevent repeated ciphertext and modified or swapped records fail
   const data=fixture(t);await localSet({run:{sample:1}});const first=structuredClone(data.run);
   await localSet({run:{sample:1}});assert.notDeepEqual(data.run.iv,first.iv);
   data.candidates=structuredClone(data.run);await assert.rejects(localGet('candidates'),/无法解密/);
-  data.run.data[0]^=1;await assert.rejects(localGet('run'),/无法解密/);
+  const tampered=Buffer.from(data.run.data,'base64');tampered[0]^=1;data.run.data=tampered.toString('base64');await assert.rejects(localGet('run'),/无法解密/);
 });
 test('encryption key is non-extractable and absent from Chrome local storage',async t=>{
   const data=fixture(t);await localSet({modelConfig:{apiKey:'sample'}});
