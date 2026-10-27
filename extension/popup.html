@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>雨课堂平铺助手</title><link rel="stylesheet" href="popup.css"></head>
 <body>
-  <header><span>YUKETANG / LOCAL</span><h1>平铺学习助手</h1><p>一个课程一个窗口，让播放状态看得见。</p><button id="dashboard" class="secondary">打开完整控制页</button></header>
+  <header><span>YUKETANG</span><h1>平铺学习助手</h1><p>一个课程一个窗口，让播放状态看得见。</p><button id="dashboard" class="secondary">打开完整控制页</button></header>
   <div class="row actions"><button id="start">开始所选队列</button><button id="tile" class="secondary">重新平铺</button></div>
   <div class="row"><button id="pause" class="secondary">暂停全部</button><button id="resume" class="secondary">继续队列</button></div>
   <button id="reload" class="secondary">刷新课程窗口并暂停</button>
@@ -20,9 +20,18 @@
     <label class="wide toggle"><input type="checkbox" id="focusWindows"> 启动、继续时将课程窗口置前</label>
     <p class="hint wide">默认不抢焦点。课程窗口仍需可见；「重新平铺」会主动置前。</p>
     <p class="hint wide">视频队列自动静音播放、回查完成状态并切换下一单元。作业页面有「答案建议」侧栏，点一次「收集全部并分析」，模型一次分析整份作业，不会选择选项或提交。</p>
-    <p class="hint wide">题干和选项会发送至配置的模型。视觉模式发送渲染图片；OCR 模式发送识别文字。收集遇到核验、未保存答案提示或未适配题型会停止，不会发送不完整作业。</p>
-    <label class="wide">本地连接口令<input id="token" type="password" autocomplete="off" placeholder=".env 中的 BRIDGE_TOKEN；不是 LLM API key"></label>
-    <button id="health" class="secondary wide">保存口令并检查本地服务</button>
+  </section>
+  <section class="settings">
+    <h2 class="wide">AI 模型设置 <small id="modelState"></small></h2>
+    <p class="hint wide">仅作业答案建议需要配置。扩展直接调用模型，无需 Node 或本地服务。请选择支持图片输入的 OpenAI 兼容接口。</p>
+    <label class="wide">API 基地址<input id="baseURL" type="url" placeholder="https://api.deepseek.com" autocomplete="off"></label>
+    <label class="wide">模型名称<input id="model" type="text" placeholder="deepseek-flash" autocomplete="off"></label>
+    <label class="wide">API key<input id="apiKey" type="password" autocomplete="off" placeholder="填写你自己的模型密钥"></label>
+    <button id="saveModel" class="secondary wide">保存模型设置</button>
+    <button id="testModel" class="secondary wide">测试连接与图片输入</button>
+    <button id="clearModel" class="secondary wide">删除已保存的密钥与设置</button>
+    <p class="hint wide">密钥仅保存在 Chrome 本地，不同步；题干与选项图片发送至所配置的模型。保存时 Chrome 会询问该 API 站点的访问权限。连接测试和作业分析会产生模型 API 费用。</p>
+    <p class="hint wide">收集遇到核验、未保存答案提示或未适配题型会停止，不会发送不完整作业。</p>
   </section>
   <footer>保持屏幕解锁，避免其他应用覆盖课程窗口。播放结束后以目录「已完成」为准。</footer>
   <script type="module" src="popup.js"></script>

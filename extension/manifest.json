@@ -1,15 +1,54 @@
 {
   "manifest_version": 3,
   "name": "雨课堂 · 平铺学习助手",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "静音视频队列与整份作业的模型答案建议，由用户自行作答。",
   "minimum_chrome_version": "120",
-  "permissions": ["storage", "alarms", "system.display", "power"],
-  "host_permissions": ["https://pro.yuketang.cn/*", "http://127.0.0.1:8765/*"],
-  "background": { "service_worker": "background.js", "type": "module" },
-  "action": { "default_popup": "popup.html", "default_title": "雨课堂平铺助手" },
+  "permissions": [
+    "storage",
+    "alarms",
+    "system.display",
+    "power"
+  ],
+  "host_permissions": [
+    "https://pro.yuketang.cn/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "雨课堂平铺助手"
+  },
   "content_scripts": [
-    { "matches": ["https://pro.yuketang.cn/*"], "js": ["open-unit.js"], "run_at": "document_start", "all_frames": true, "world": "MAIN" },
-    { "matches": ["https://pro.yuketang.cn/*"], "js": ["content.js", "advice.js"], "run_at": "document_idle", "all_frames": true }
+    {
+      "matches": [
+        "https://pro.yuketang.cn/*"
+      ],
+      "js": [
+        "open-unit.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true,
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://pro.yuketang.cn/*"
+      ],
+      "js": [
+        "content.js",
+        "advice.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*",
+    "http://[::1]/*"
   ]
 }

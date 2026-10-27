@@ -5,10 +5,11 @@ const home='https://pro.yuketang.cn/v2/web/studentLog/10001';
 function event(){return {listeners:[],addListener(fn){this.listeners.push(fn);}};}
 async function fixture(t){
   const originalChrome=globalThis.chrome;
-  const data={},session={},windows=new Map(),tabs=new Map(),windowUpdates=[];let counter=10;
-  const store=bag=>({get:async key=>structuredClone({[key]:bag[key]}),set:async obj=>Object.assign(bag,structuredClone(obj))});
+  const data={},session={},permissions=new Set(),windows=new Map(),tabs=new Map(),windowUpdates=[];let counter=10;
+  const store=bag=>({get:async key=>structuredClone({[key]:bag[key]}),set:async obj=>Object.assign(bag,structuredClone(obj)),remove:async key=>{delete bag[key];},setAccessLevel:async opts=>{bag.accessLevel=opts.accessLevel;}});
   const chrome={
     storage:{local:store(data),session:store(session)},
+    permissions:{contains:async ({origins})=>origins.every(o=>permissions.has(o))},
     runtime:{getURL:p=>ext+p,onMessage:event(),onStartup:event()},
     system:{display:{getInfo:async()=>[{id:'main',isPrimary:true,workArea:{left:0,top:25,width:1512,height:835}}]}},
     power:{requestKeepAwake(){},releaseKeepAwake(){}},
@@ -23,7 +24,8 @@ async function fixture(t){
   await get();
   const start=async(count=2)=>send({type:'START',tasks:Array.from({length:3},(_,i)=>({url:home,targetTitle:`video-${i}`})),config:{count,rate:2,autoQA:true}});
   const page=(slot,frameId=0)=>({tab:{id:slot.tabId},url:home,frameId});
-  return {chrome,send,get,start,page,tabs,windows,windowUpdates};
+  const configure=async()=>{permissions.add('https://model.example/*');return send({type:'MODEL_SAVE',settings:{baseURL:'https://model.example/v1',model:'vision-model',apiKey:'test-api-key'}});};
+  return {chrome,send,get,start,page,tabs,windows,windowUpdates,data,permissions,configure};
 }
 test('start and resume keep windows unfocused by default; explicit tile brings them forward',async t=>{
   const f=await fixture(t);await f.start();
@@ -100,9 +102,9 @@ test('video queue filters homework and moves past an unclassified homework task'
   s=await f.get();assert.equal(s.tasks[0].phase,'manual');assert.equal(s.tasks[1].phase,'opening');
 });
 test('batch advice works independently of the paused video queue and is cached without images',async t=>{
-  const f=await fixture(t);await f.send({type:'TOKEN',token:'test-token'});
+  const f=await fixture(t);assert.equal((await f.configure()).ok,true);
   const originalFetch=globalThis.fetch;let calls=0;
-  globalThis.fetch=async(target,opts)=>{calls++;assert.equal(String(target),'http://127.0.0.1:8765/qa/batch');const {questions}=JSON.parse(opts.body);return Response.json({answers:questions.map(q=>({...q,selected:['B'],uncertain:false,explanation:'根据题目'}))});};
+  globalThis.fetch=async(target,opts)=>{calls++;assert.equal(String(target),'https://model.example/v1/chat/completions');assert.equal(opts.headers.Authorization,'Bearer test-api-key');const questions=JSON.parse(opts.body).messages[1].content.map(p=>JSON.parse(p.text));return Response.json({choices:[{message:{content:JSON.stringify({answers:questions.map(q=>({...q,selected:['B'],uncertain:false,explanation:'根据题目'}))})}}]});};
   t.after(()=>{globalThis.fetch=originalFetch;});
   const sender={tab:{id:600},url:'https://pro.yuketang.cn/v2/web/iframe-exercise/10001/20001',frameId:2};
   const msg={type:'ADVICE_BATCH',questions:[{id:'1',kind:'single',stem:'Test?',options:[{id:'A',text:'One'},{id:'B',text:'Two'}]}]};
@@ -111,13 +113,34 @@ test('batch advice works independently of the paused video queue and is cached w
   const cache=await f.send({type:'ADVICE_GET'},sender);assert.equal(cache.value.answers[0].id,'1');assert.ok(!JSON.stringify(cache).includes('rendered'));
 });
 test('cancel discards a pending batch even if the provider eventually returns',async t=>{
-  const f=await fixture(t);await f.send({type:'TOKEN',token:'test-token'});
+  const f=await fixture(t);assert.equal((await f.configure()).ok,true);
   const originalFetch=globalThis.fetch;let resolve;globalThis.fetch=async()=>new Promise(r=>{resolve=r;});t.after(()=>{globalThis.fetch=originalFetch;});
   const sender={tab:{id:600},url:'https://pro.yuketang.cn/v2/web/iframe-exercise/10001/20001',frameId:2};
   const q={id:'1',kind:'single',stem:'Test?',options:[{id:'A',text:'One'},{id:'B',text:'Two'}]};
   const result=f.send({type:'ADVICE_BATCH',questions:[q]},sender);
   while(!resolve)await new Promise(r=>setImmediate(r));
   assert.equal((await f.send({type:'ADVICE_CANCEL'},sender)).ok,true);
-  resolve(Response.json({answers:[{...q,selected:['A'],uncertain:false,explanation:'test'}]}));
+  resolve(Response.json({choices:[{message:{content:JSON.stringify({answers:[{...q,selected:['A'],uncertain:false,explanation:'test'}]})}}]}));
   assert.equal((await result).ok,false);assert.equal((await f.send({type:'ADVICE_GET'},sender)).value,null);
+});
+
+test('model settings stay in trusted local storage and never appear in course messages or diagnostics',async t=>{
+  const f=await fixture(t);assert.equal(f.data.accessLevel,'TRUSTED_CONTEXTS');
+  assert.equal((await f.configure()).ok,true);
+  const view=await f.send({type:'MODEL_GET'});assert.equal(view.value.hasApiKey,true);assert.ok(!JSON.stringify(view).includes('test-api-key'));
+  assert.ok(!JSON.stringify(await f.get()).includes('test-api-key'));
+  const sender={tab:{id:600},url:'https://pro.yuketang.cn/v2/web/iframe-exercise/10001/20001',frameId:0};
+  assert.ok(!JSON.stringify(await f.send({type:'MODEL_GET'},sender)).includes('test-api-key'));
+  await f.send({type:'MODEL_CLEAR'});assert.equal(f.data.modelConfig,undefined);assert.equal((await f.send({type:'MODEL_GET'})).value.hasApiKey,false);
+});
+test('saving requires site permission and never reuses the saved key for a different API origin',async t=>{
+  const f=await fixture(t);
+  const settings={baseURL:'https://model.example/v1',model:'vision-model',apiKey:'test-api-key'};
+  assert.equal((await f.send({type:'MODEL_SAVE',settings})).ok,false);assert.equal(f.data.modelConfig,undefined);
+  await f.configure();
+  assert.equal((await f.send({type:'MODEL_SAVE',settings:{...settings,model:'new-model',apiKey:''}})).ok,true);
+  assert.equal(f.data.modelConfig.apiKey,'test-api-key');
+  f.permissions.add('https://other.example/*');
+  assert.equal((await f.send({type:'MODEL_SAVE',settings:{...settings,baseURL:'https://other.example/v1',apiKey:''}})).ok,false);
+  assert.equal(f.data.modelConfig.baseURL,'https://model.example/v1');
 });

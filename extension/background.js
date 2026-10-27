@@ -1,9 +1,10 @@
-import { tileRects, courseURL, validateBatch, validateBatchAnswers } from './core.js';
+import { tileRects, courseURL, validateBatch } from './core.js';
 import { recordMedia, recordGap } from './diagnostics.js';
+import {validateModelSettings, publicModelSettings, modelOrigin, analyzeBatch, testModelConnection} from './model.js';
 
 let state, adviceCache={};
 const adviceJobs=new Map();
-const ready = Promise.all([chrome.storage.local.get('run'),chrome.storage.local.get('adviceCache')]).then(([{run},{adviceCache:cached}]) => {
+const ready = chrome.storage.local.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'}).then(()=>Promise.all([chrome.storage.local.get('run'),chrome.storage.local.get('adviceCache')])).then(([{run},{adviceCache:cached}]) => {
   state = run || {paused:true, tasks:[], slots:[], config:{}};
   state.config={...state.config,autoQA:false,videosOnly:true};
   adviceCache=cached||{};
@@ -48,15 +49,24 @@ async function fillSlots() {
   }
   sleepState(); await save();
 }
-async function bridge(path, question, signal) {
-  const {bridgeToken} = await chrome.storage.session.get('bridgeToken');
-  if (!bridgeToken) throw Error('请先填写本地连接口令，并启动 npm start');
-  const res = await fetch(`http://127.0.0.1:8765${path}`,{method:question?'POST':'GET',
-    headers:{Authorization:`Bearer ${bridgeToken}`, 'Content-Type':'application/json'},
-    ...(question ? {body:JSON.stringify(question)} : {}), signal:signal || AbortSignal.timeout(path==='/qa/batch'?150000:75000)});
-  const body = await res.json();
-  if (!res.ok) throw Error(body.error || `本地服务 HTTP ${res.status}`);
-  return body;
+async function modelSettings() {
+  const {modelConfig}=await chrome.storage.local.get('modelConfig');
+  if(!modelConfig)throw Error('请在扩展控制页的「AI 模型设置」填写 API 地址、模型和密钥');
+  const settings=validateModelSettings(modelConfig);
+  if(!await chrome.permissions.contains({origins:[modelOrigin(settings.baseURL)]}))throw Error('模型站点访问权限已关闭，请在 AI 模型设置中重新保存');
+  return settings;
+}
+async function keepModelAlive(fn) {
+  // An extension API call resets MV3's idle timer while streaming a long batch.
+  const heartbeat=setInterval(()=>chrome.runtime.getPlatformInfo().catch(()=>{}),20000);
+  try{return await fn();}finally{clearInterval(heartbeat);}
+}
+let activeModelRequests=0;
+async function requestAdvice(questions,signal) {
+  if(activeModelRequests>=2)throw Error('已有两个分析请求，请稍后重试');
+  activeModelRequests++;
+  try{const settings=await modelSettings();return await keepModelAlive(()=>analyzeBatch(settings,{questions},{signal}));}
+  finally{activeModelRequests--;}
 }
 function exerciseKey(sender) {
   const match=new URL(sender.url).pathname.match(/(?:iframe-exercise\/|lms-graph\/)(\d+)\/(?:exercise\/)?(\d+)/);
@@ -77,7 +87,7 @@ async function advice(msg,sender) {
     const signature=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(payload)))).map(b=>b.toString(16).padStart(2,'0')).join('');
     if(controller.signal.aborted) throw Error('本次分析已取消');
     if(adviceCache[key]?.signature===signature) return {...adviceCache[key],cached:true};
-    const result=validateBatchAnswers(await bridge('/qa/batch',{questions},controller.signal),questions);
+    const result=await requestAdvice(questions,controller.signal);
     if(controller.signal.aborted || adviceJobs.get(id)!==controller) throw Error('本次分析已取消');
     const entry={...result,signature,at:Date.now()};
     adviceCache[key]=entry;
@@ -89,7 +99,21 @@ async function advice(msg,sender) {
 async function control(msg) {
   switch(msg.type) {
     case 'GET': return {...state, displays:await chrome.system.display.getInfo()};
-    case 'TOKEN': await chrome.storage.session.set({bridgeToken:String(msg.token)}); return {ok:true};
+    case 'MODEL_GET': return publicModelSettings((await chrome.storage.local.get('modelConfig')).modelConfig);
+    case 'MODEL_SAVE': {
+      const {modelConfig:previous}=await chrome.storage.local.get('modelConfig');
+      const candidate=validateModelSettings({...msg.settings,apiKey:'validation-placeholder'});
+      const settings=validateModelSettings({...candidate,apiKey:msg.settings?.apiKey?.trim() || (previous && modelOrigin(previous.baseURL)===modelOrigin(candidate.baseURL)?previous.apiKey:'')});
+      if(!await chrome.permissions.contains({origins:[modelOrigin(settings.baseURL)]}))throw Error('请先允许扩展访问所填写的模型站点');
+      for(const job of adviceJobs.values())job.abort();
+      adviceCache={};
+      await chrome.storage.local.set({modelConfig:settings,adviceCache});
+      return publicModelSettings(settings);
+    }
+    case 'MODEL_CLEAR':
+      for(const job of adviceJobs.values())job.abort();
+      adviceCache={};await chrome.storage.local.remove('modelConfig');await chrome.storage.local.set({adviceCache});
+      return {ok:true};
     case 'START': {
       if (!state.paused && state.tasks.some(t => !['done','skipped','manual'].includes(t.phase))) throw Error('请先暂停当前队列');
       if (!Array.isArray(msg.tasks) || !msg.tasks.length || msg.tasks.length > 100) throw Error('请选择 1–100 个学习单元');
@@ -194,7 +218,7 @@ chrome.runtime.onMessage.addListener((msg,sender,sendResponse) => {
   const internal = sender.url?.startsWith(chrome.runtime.getURL(''));
   const fromCourse = sender.tab && sender.url?.startsWith('https://pro.yuketang.cn/');
   let p;
-  if (internal && msg.type==='HEALTH') p=ready.then(()=>bridge('/health'));
+  if (internal && msg.type==='MODEL_TEST') p=ready.then(async()=>{const settings=await modelSettings();return keepModelAlive(()=>testModelConnection(settings));});
   else if (internal) p=serial(()=>control(msg));
   else if (fromCourse && msg.type==='ADVICE_BATCH') p=advice(msg,sender);
   else if (fromCourse) p=serial(()=>content(msg,sender));
