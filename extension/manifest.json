@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "雨课堂 · 平铺学习助手",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "静音视频队列与整份作业的模型答案建议，由用户自行作答。",
   "minimum_chrome_version": "120",
   "permissions": [
@@ -19,7 +19,11 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "雨课堂平铺助手"
+    "default_title": "雨课堂平铺助手",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    }
   },
   "content_scripts": [
     {
@@ -50,5 +54,12 @@
     "http://localhost/*",
     "http://127.0.0.1/*",
     "http://[::1]/*"
-  ]
+  ],
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "homepage_url": "https://github.com/Daucloud/yuketang-rush"
 }

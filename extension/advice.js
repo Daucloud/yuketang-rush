@@ -123,28 +123,36 @@
       item.append(node('strong',answer.uncertain?'暂不建议作答':choices.join('；')),node('p',answer.explanation));
       item.classList.toggle('uncertain',answer.uncertain);list.append(item);
     }
-    panel.querySelector('[data-cancel]').disabled=true;panel.querySelector('[data-start]').disabled=false;highlight();
+    panel.querySelector('[data-cancel]').disabled=true;panel.querySelector('[data-start]').disabled=false;highlight(true);
   }
-  function highlight() {if(panel)for(const item of panel.querySelectorAll('article'))item.classList.toggle('current',item.dataset.order===current);}
+  function highlight(follow=false) {
+    if(!panel)return;
+    let selected;
+    for(const item of panel.querySelectorAll('article')){const active=item.dataset.order===current;item.classList.toggle('current',active);if(active)selected=item;}
+    if(!follow || !selected || panel.classList.contains('collapsed'))return;
+    const list=panel.querySelector('[data-results]'),box=list.getBoundingClientRect(),row=selected.getBoundingClientRect();
+    if(row.top<box.top || row.bottom>box.bottom)list.scrollTop=Math.max(0,list.scrollTop+row.top-box.top-8);
+  }
+  function selectCurrent(order){const changed=current!==order;current=order;highlight(changed);}
   function ensurePanel() {
     if(!isTop)return;
     const key=exercise();
     if(!key) {panel?.remove();document.documentElement.classList.remove('ykt-advice-open');panel=null;currentExercise=null;return;}
     if(panel && currentExercise===key)return;
-    panel?.remove();currentExercise=key;requestId=null;current=null;
+    panel?.remove();currentExercise=key;requestId=null;current=null;lastOrder=null;
     panel=node('aside');panel.id='ykt-advice-panel';panel.setAttribute('aria-label','作业答案建议');
     panel.innerHTML=`<style>
       #ykt-advice-panel{position:fixed;right:12px;top:76px;width:330px;max-width:90vw;max-height:82vh;z-index:2147483646;background:#fff;color:#172a38;border:1px solid #ccd8e1;border-radius:12px;box-shadow:0 5px 24px #172a3820;font:14px/1.55 system-ui;overflow:auto}
       #ykt-advice-panel header{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid #e5ebf0}#ykt-advice-panel h2{font-size:16px;margin:0}
       #ykt-advice-panel button{font:inherit;cursor:pointer;border:1px solid #ccd8e1;border-radius:7px;background:#f3f7fa;color:#172a38;padding:6px 10px}#ykt-advice-panel button:disabled{opacity:.5;cursor:default}
       #ykt-advice-panel .body{padding:12px 14px}#ykt-advice-panel p{margin:8px 0;overflow-wrap:anywhere}#ykt-advice-panel small{color:#536777}#ykt-advice-panel .buttons{display:flex;gap:6px;flex-wrap:wrap}
-      #ykt-advice-panel article{padding:10px 8px;border-top:1px solid #e5ebf0;border-left:3px solid transparent}#ykt-advice-panel h3{font-size:14px;margin:0}#ykt-advice-panel article.current{border-left-color:#326de6;background:#f1f6ff}#ykt-advice-panel article.uncertain strong{color:#a36800}#ykt-advice-panel [data-error]{color:#a33c32}
+      #ykt-advice-panel [data-results]{max-height:42vh;overflow-y:auto;overscroll-behavior:contain}#ykt-advice-panel article{padding:10px 8px;border-top:1px solid #e5ebf0;border-left:3px solid transparent}#ykt-advice-panel h3{font-size:14px;margin:0}#ykt-advice-panel article.current{border-left-color:#326de6;background:#f1f6ff}#ykt-advice-panel article.uncertain strong{color:#a36800}#ykt-advice-panel [data-error]{color:#a33c32}
       #ykt-advice-panel.collapsed{width:180px}#ykt-advice-panel.collapsed .body{display:none}
       @media(min-width:1200px){html.ykt-advice-open body{margin-right:354px!important}}
     </style><header><h2>作业答案建议</h2><button data-toggle>收起</button></header><div class="body"><small>模型一次分析整份作业；你自行选择和提交。</small><p>收集时会切换题号。请先处理当前题的未保存选择。</p><div class="buttons"><button data-start>收集全部并分析</button><button data-cancel disabled>取消</button><button data-clear>清除建议</button></div><p data-status role="status">准备好后开始收集题面。</p><p data-error></p><div data-results></div></div>`;
     document.documentElement.append(panel);
     document.documentElement.classList.add('ykt-advice-open');
-    panel.querySelector('[data-toggle]').onclick=()=>{panel.classList.toggle('collapsed');document.documentElement.classList.toggle('ykt-advice-open',!panel.classList.contains('collapsed'));panel.querySelector('[data-toggle]').textContent=panel.classList.contains('collapsed')?'展开':'收起';};
+    panel.querySelector('[data-toggle]').onclick=()=>{panel.classList.toggle('collapsed');document.documentElement.classList.toggle('ykt-advice-open',!panel.classList.contains('collapsed'));panel.querySelector('[data-toggle]').textContent=panel.classList.contains('collapsed')?'展开':'收起';if(!panel.classList.contains('collapsed'))highlight(true);};
     panel.querySelector('[data-start]').onclick=async()=>{
       requestId=crypto.randomUUID();panel.querySelector('[data-error]').textContent='';panel.querySelector('[data-start]').disabled=true;panel.querySelector('[data-cancel]').disabled=false;panel.querySelector('[data-status]').textContent='正在收集全部题面…';
       try {await rpc({type:'ADVICE_COLLECT_START',requestId});} catch(e){showError(e.message);}
@@ -161,7 +169,7 @@
     if(msg.type==='ADVICE_UI' && isTop) {
       reply?.({accepted:true});
       if(!panel || msg.exercise!==currentExercise)return;
-      if(msg.current){current=msg.current;highlight();}
+      if(msg.current)selectCurrent(msg.current);
       if(msg.requestId!==requestId)return;
       if(msg.message)panel.querySelector('[data-status]').textContent=msg.message;
       if(msg.error)showError(msg.error);
@@ -172,7 +180,7 @@
     if(typeof location==='undefined'||typeof document==='undefined')return;
     ensurePanel();
     const order=activeOrder();
-    if(order && order!==lastOrder){lastOrder=order;rpc({type:'ADVICE_PROGRESS',state:{current:order}}).catch(()=>{});}
+    if(order && order!==lastOrder){lastOrder=order;if(isTop)selectCurrent(order);rpc({type:'ADVICE_PROGRESS',state:{current:order}}).catch(()=>{});}
   }
   const observer=new MutationObserver(update);
   observer.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:['class']});

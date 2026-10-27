@@ -1,10 +1,10 @@
 # 雨课堂视频队列与作业答案建议
 
-独立 Chrome MV3 扩展：静音视频队列，以及整份作业的模型答案建议。仅适配 `pro.yuketang.cn`，不支持其他雨课堂域名。当前版本 **0.3.0，实验版**。
+独立 Chrome MV3 扩展：静音视频队列，以及整份作业的模型答案建议。仅适配 `pro.yuketang.cn`，不支持其他雨课堂域名。当前版本 **0.3.1，实验版**。
 
 视频队列和 AI 建议均直接在扩展内运行，无需 Node.js、`npm start` 或本地连接口令。AI 建议需要你自己的模型 API key，费用由所配置的提供商收取；请选择支持图片输入的 OpenAI 兼容接口。
 
-[下载当前版本](https://github.com/Daucloud/yuketang-rush/releases/tag/v0.3.0) · [MIT 许可证](LICENSE) · [参与开发](CONTRIBUTING.md)
+[下载当前版本](https://github.com/Daucloud/yuketang-rush/releases/tag/v0.3.1) · [MIT 许可证](LICENSE) · [参与开发](CONTRIBUTING.md) · [隐私政策](PRIVACY.md)
 
 ![作业建议侧栏，全部为示例数据](docs/advice-preview.png)
 
@@ -33,7 +33,7 @@
 
 ## 首次安装
 
-1. 从 [Releases](https://github.com/Daucloud/yuketang-rush/releases/tag/v0.3.0) 下载 `yuketang-extension-0.3.0.zip`，解压到固定文件夹。
+1. 从 [Releases](https://github.com/Daucloud/yuketang-rush/releases/tag/v0.3.1) 下载 `yuketang-extension-0.3.1.zip`，解压到固定文件夹。
 2. 在你的 Chrome 打开 `chrome://extensions`，开启「开发者模式」。
 3. 点击「加载已解压的扩展程序」，选择解压后的 `extension` 文件夹。
 4. 登录课程并刷新页面，点击扩展图标打开控制页，读取目录、选择视频并启动队列。
@@ -55,13 +55,13 @@
 
 保存时 Chrome 会请求该 API 站点的访问权限。首次配置后点击「测试连接与图片输入」，测试会发送一张空白示例图片并产生少量 API 费用。保存设置不会自动调用模型。
 
-密钥保存在 `chrome.storage.local`，不使用浏览器同步；内容脚本不能直接读取该存储。控制页不回显已保存的密钥，留空可保留同一 API 站点的密钥，更换站点需要重新填写。点击「删除已保存的密钥与设置」可删除配置与答案缓存。更改模型设置会取消进行中的分析并清除旧缓存。
+密钥、课程队列及答案缓存在本机使用 AES-256-GCM 加密保存，不使用浏览器同步；内容脚本不能直接读取该存储。控制页不回显已保存的密钥，留空可保留同一 API 站点的密钥，更换站点需要重新填写。点击「删除已保存的密钥与设置」可删除配置与答案缓存。更改模型设置会取消进行中的分析并清除旧缓存。
 
 每份作业使用一次模型请求，支持 1–100 题、题面数据最多 32 MB。最多并行两个分析请求；模型调用最长 120 秒，整批分析最长 150 秒。扩展接收流式响应，校验全部题号、选项与题面转写后才显示答案。题号缺失、重复或未知选项会使整批失败。
 
 从旧版升级时无需运行 `npm start`，也无需填写 `BRIDGE_TOKEN`。旧 `.env` 中的模型配置不会自动导入 Chrome，请在设置中填写一次。
 
-源码仍保留旧版 `server.mjs` 与 macOS OCR 模块，供开发测试和兼容性研究；0.3.0 扩展不连接它们。
+源码仍保留旧版 `server.mjs` 与 macOS OCR 模块，供开发测试和兼容性研究；0.3.1 扩展不连接它们。
 
 ## 暂停、缓存与边界
 
@@ -87,4 +87,8 @@ npm test
 node scripts/preview-advice.mjs
 ```
 
-预览地址：`http://127.0.0.1:8767/v2/web/iframe-exercise/1/1`。仅使用示例答案，不连接课程或模型。当前通过 57 项本地自动化测试、模拟界面验证及真实模型的图片连接测试和示例题直接调用。新版自动视频队列尚未完成真实课程端到端验证，不能保证所有页面与后台播放环境均可运行。详见 [更新记录](CHANGELOG.md)。
+预览地址：`http://127.0.0.1:8767/v2/web/iframe-exercise/1/1`。仅使用示例答案，不连接课程或模型。当前通过 63 项本地自动化测试、模拟界面验证及真实模型的图片连接测试和示例题直接调用。新版自动视频队列尚未完成真实课程端到端验证，不能保证所有页面与后台播放环境均可运行。详见 [更新记录](CHANGELOG.md)。
+
+## Chrome Web Store 上架
+
+商店上架资料、权限用途说明与截图见 [docs/webstore/LISTING.md](docs/webstore/LISTING.md)。商店上传必须使用 `yuketang-webstore-0.3.1.zip`，其根目录直接包含 `manifest.json`。这是待提交的材料，尚未通过商店审核或上架。

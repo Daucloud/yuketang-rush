@@ -1,17 +1,18 @@
+import {localGet,localSet,localRemove} from './storage.js';
 import { tileRects, courseURL, validateBatch } from './core.js';
 import { recordMedia, recordGap } from './diagnostics.js';
 import {validateModelSettings, publicModelSettings, modelOrigin, analyzeBatch, testModelConnection} from './model.js';
 
 let state, adviceCache={};
 const adviceJobs=new Map();
-const ready = chrome.storage.local.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'}).then(()=>Promise.all([chrome.storage.local.get('run'),chrome.storage.local.get('adviceCache')])).then(([{run},{adviceCache:cached}]) => {
+const ready = chrome.storage.local.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'}).then(()=>Promise.all([localGet('run'),localGet('adviceCache'),localGet('modelConfig'),localGet('candidates')])).then(([{run},{adviceCache:cached}]) => {
   state = run || {paused:true, tasks:[], slots:[], config:{}};
   state.config={...state.config,autoQA:false,videosOnly:true};
   adviceCache=cached||{};
 });
 let chain = ready;
 function serial(fn) { const p = chain.then(fn); chain = p.catch(() => {}); return p; }
-async function save() { await chrome.storage.local.set({run:state}); }
+async function save() { await localSet({run:state}); }
 const managed = id => state.slots.find(s => s.tabId === id);
 const taskOf = slot => state.tasks.find(t => t.id === slot?.taskId);
 function sleepState() { if (state.paused || !state.tasks.some(t => ['pending','opening','running','verifying'].includes(t.phase))) chrome.power.releaseKeepAwake(); else chrome.power.requestKeepAwake('display'); }
@@ -50,7 +51,7 @@ async function fillSlots() {
   sleepState(); await save();
 }
 async function modelSettings() {
-  const {modelConfig}=await chrome.storage.local.get('modelConfig');
+  const {modelConfig}=await localGet('modelConfig');
   if(!modelConfig)throw Error('请在扩展控制页的「AI 模型设置」填写 API 地址、模型和密钥');
   const settings=validateModelSettings(modelConfig);
   if(!await chrome.permissions.contains({origins:[modelOrigin(settings.baseURL)]}))throw Error('模型站点访问权限已关闭，请在 AI 模型设置中重新保存');
@@ -92,27 +93,27 @@ async function advice(msg,sender) {
     const entry={...result,signature,at:Date.now()};
     adviceCache[key]=entry;
     for(const old of Object.keys(adviceCache).sort((a,b)=>adviceCache[b].at-adviceCache[a].at).slice(10)) delete adviceCache[old];
-    await chrome.storage.local.set({adviceCache});
+    await localSet({adviceCache});
     return entry;
   } finally {clearTimeout(timer);if(adviceJobs.get(id)===controller)adviceJobs.delete(id);}
 }
 async function control(msg) {
   switch(msg.type) {
     case 'GET': return {...state, displays:await chrome.system.display.getInfo()};
-    case 'MODEL_GET': return publicModelSettings((await chrome.storage.local.get('modelConfig')).modelConfig);
+    case 'MODEL_GET': return publicModelSettings((await localGet('modelConfig')).modelConfig);
     case 'MODEL_SAVE': {
-      const {modelConfig:previous}=await chrome.storage.local.get('modelConfig');
+      const {modelConfig:previous}=await localGet('modelConfig');
       const candidate=validateModelSettings({...msg.settings,apiKey:'validation-placeholder'});
       const settings=validateModelSettings({...candidate,apiKey:msg.settings?.apiKey?.trim() || (previous && modelOrigin(previous.baseURL)===modelOrigin(candidate.baseURL)?previous.apiKey:'')});
       if(!await chrome.permissions.contains({origins:[modelOrigin(settings.baseURL)]}))throw Error('请先允许扩展访问所填写的模型站点');
       for(const job of adviceJobs.values())job.abort();
       adviceCache={};
-      await chrome.storage.local.set({modelConfig:settings,adviceCache});
+      await localSet({modelConfig:settings,adviceCache});
       return publicModelSettings(settings);
     }
     case 'MODEL_CLEAR':
       for(const job of adviceJobs.values())job.abort();
-      adviceCache={};await chrome.storage.local.remove('modelConfig');await chrome.storage.local.set({adviceCache});
+      adviceCache={};await localRemove('modelConfig');await localSet({adviceCache});
       return {ok:true};
     case 'START': {
       if (!state.paused && state.tasks.some(t => !['done','skipped','manual'].includes(t.phase))) throw Error('请先暂停当前队列');
@@ -181,7 +182,7 @@ async function content(msg,sender) {
   }
   if(msg.type==='ADVICE_GET') return adviceCache[exerciseKey(sender)] || null;
   if(msg.type==='ADVICE_CANCEL') {adviceJobs.get(jobKey(sender))?.abort();return {ok:true};}
-  if(msg.type==='ADVICE_CLEAR') {delete adviceCache[exerciseKey(sender)];await chrome.storage.local.set({adviceCache});return {ok:true};}
+  if(msg.type==='ADVICE_CLEAR') {delete adviceCache[exerciseKey(sender)];await localSet({adviceCache});return {ok:true};}
   if(msg.type==='CLAIM_SUBMIT' || msg.type==='ANSWER') throw Error('自动选择和提交已移除，请使用批量答案建议');
   const slot=managed(sender.tab?.id), task=taskOf(slot);
   if (!slot || !task) return {active:false};

@@ -67,3 +67,14 @@ test('advice text is rendered as text and uncertain questions show no recommende
   f.start();await flush(()=>f.w.document.querySelectorAll('#ykt-advice-panel article').length===3);
   assert.equal(f.w.document.querySelectorAll('#ykt-advice-panel img').length,0);assert.match(f.w.document.querySelector('article strong').textContent,/暂不建议作答/);
 });
+
+test('changing questions scrolls only the advice list to the highlighted answer',async t=>{
+  const f=await fixture(t);f.start();await flush(()=>f.w.document.querySelectorAll('#ykt-advice-panel article').length===3);
+  const list=f.w.document.querySelector('[data-results]'),third=list.querySelector('[data-order="3"]');
+  list.getBoundingClientRect=()=>({top:100,bottom:250});third.getBoundingClientRect=()=>({top:500,bottom:620});
+  let pageScrolls=0;f.w.scrollTo=()=>pageScrolls++;f.w.HTMLElement.prototype.scrollIntoView=()=>pageScrolls++;
+  f.w.document.querySelector('.J_order[data-order="3"]').click();await flush(()=>third.classList.contains('current'));
+  assert.ok(list.scrollTop>0);assert.equal(pageScrolls,0);assert.equal(f.submits(),0);
+  const position=list.scrollTop;f.w.document.querySelector('main').classList.add('unrelated-change');await new Promise(r=>setImmediate(r));
+  assert.equal(list.scrollTop,position,'unrelated mutations must not repeatedly move the advice list');
+});

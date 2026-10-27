@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {indexedDB} from 'fake-indexeddb';
+import {localGet} from '../extension/storage.js';
 const ext='chrome-extension://abcdefghijklmnopabcdefghijklmnop/';
 const home='https://pro.yuketang.cn/v2/web/studentLog/10001';
 function event(){return {listeners:[],addListener(fn){this.listeners.push(fn);}};}
 async function fixture(t){
-  const originalChrome=globalThis.chrome;
+  const originalChrome=globalThis.chrome,originalIDB=globalThis.indexedDB;globalThis.indexedDB=indexedDB;
   const data={},session={},permissions=new Set(),windows=new Map(),tabs=new Map(),windowUpdates=[];let counter=10;
   const store=bag=>({get:async key=>structuredClone({[key]:bag[key]}),set:async obj=>Object.assign(bag,structuredClone(obj)),remove:async key=>{delete bag[key];},setAccessLevel:async opts=>{bag.accessLevel=opts.accessLevel;}});
   const chrome={
@@ -17,7 +19,7 @@ async function fixture(t){
     windows:{create:async opts=>{const id=counter++,tab={id:counter++,windowId:id,url:opts.url};tabs.set(tab.id,tab);const w={...opts,id,state:'normal',tabs:[tab]};windows.set(id,w);return structuredClone(w);},get:async id=>structuredClone(windows.get(id)),update:async(id,opts)=>{windowUpdates.push({id,opts});return Object.assign(windows.get(id),opts);}},
     tabs:{onCreated:event(),onUpdated:event(),onRemoved:event(),sendMessage:async()=>({ok:true}),reload:async id=>{if(!tabs.has(id))throw Error('tab closed');tabs.get(id).reloaded=true;},update:async(id,opts)=>{if(!tabs.has(id))throw Error('tab closed');Object.assign(tabs.get(id),opts);return structuredClone(tabs.get(id));},move:async(id,opts)=>{if(!tabs.has(id))tabs.set(id,{id});Object.assign(tabs.get(id),opts);},remove:async id=>{tabs.delete(id);for(const f of chrome.tabs.onRemoved.listeners)f(id);}}
   };
-  globalThis.chrome=chrome;t.after(()=>{globalThis.chrome=originalChrome;});
+  globalThis.chrome=chrome;t.after(()=>{globalThis.chrome=originalChrome;globalThis.indexedDB=originalIDB;});
   await import(`../extension/background.js?test=${crypto.randomUUID()}`);
   const send=(msg,sender={url:ext+'popup.html'})=>new Promise(resolve=>chrome.runtime.onMessage.listeners[0](structuredClone(msg),sender,response=>resolve(structuredClone(response))));
   const get=async()=>{const r=await send({type:'GET'});assert.equal(r.ok,true);return r.value;};
@@ -139,8 +141,8 @@ test('saving requires site permission and never reuses the saved key for a diffe
   assert.equal((await f.send({type:'MODEL_SAVE',settings})).ok,false);assert.equal(f.data.modelConfig,undefined);
   await f.configure();
   assert.equal((await f.send({type:'MODEL_SAVE',settings:{...settings,model:'new-model',apiKey:''}})).ok,true);
-  assert.equal(f.data.modelConfig.apiKey,'test-api-key');
+  assert.equal((await localGet('modelConfig')).modelConfig.apiKey,'test-api-key');assert.ok(!JSON.stringify(f.data.modelConfig).includes('test-api-key'));
   f.permissions.add('https://other.example/*');
   assert.equal((await f.send({type:'MODEL_SAVE',settings:{...settings,baseURL:'https://other.example/v1',apiKey:''}})).ok,false);
-  assert.equal(f.data.modelConfig.baseURL,'https://model.example/v1');
+  assert.equal((await localGet('modelConfig')).modelConfig.baseURL,'https://model.example/v1');
 });
