@@ -12,7 +12,8 @@
     <div class="row"><button id="refreshCourseTabs" class="secondary">刷新课程标签页</button><button id="clearCandidates" class="secondary">清空待选列表</button></div>
     <p id="candidateSource" class="hint" role="status"></p>
     <div class="row"><button id="scan">读取当前课程目录</button><button id="current" class="secondary">加入当前单元链接</button></div>
-    <p class="hint">在学习日志或学习空间读取目录。默认只选未完成视频；作业在课程页面侧边批量分析，你自行作答。</p>
+    <p id="scanMessage" class="hint" role="status" aria-live="polite"></p>
+    <p class="hint">在学习日志、学习内容或学习空间读取目录。默认只选未完成视频；作业在课程页面侧边批量分析，你自行作答。</p>
     <div id="candidates"></div>
     <details><summary>批量粘贴单元链接</summary><textarea id="urls" rows="3" placeholder="每行一个 https://pro.yuketang.cn/… 单元地址"></textarea><button id="add" class="secondary">加入待选列表</button></details>
   </section>

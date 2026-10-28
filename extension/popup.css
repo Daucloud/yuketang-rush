@@ -3,3 +3,5 @@
 #modelMessage{color:#176d66;white-space:pre-wrap;overflow-wrap:anywhere}#modelMessage:empty{display:none}#modelMessage.error{color:#b0353b}
 
 .course-source{display:flex;flex-direction:column;gap:6px}.course-source select{width:100%}#candidateSource,#runOrigin{overflow-wrap:anywhere}
+
+#scanMessage{white-space:pre-wrap;overflow-wrap:anywhere}#scanMessage.error{color:#b0353b}

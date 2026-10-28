@@ -11,7 +11,7 @@ async function fixture(t,allow=true,options={}) {
   const dom=new JSDOM(html,{url:options.url||'https://extension.example/popup.html',runScripts:'outside-only'});t.after(()=>dom.window.close());
   const w=dom.window,events=[],bag=structuredClone(options.saved||{}),tabs=structuredClone(options.tabs||[{id:1,url:'https://pro.yuketang.cn/v2/web/studentLog/10001',title:'示例课程'}]);let scanResponse=options.scan||((id)=>({ok:true,value:[{url:tabs.find(t=>t.id===id).url,title:'视频-'+id,targetTitle:'视频-'+id,kind:'video',completed:false}]}));let config={...defaultModelSettings,hasApiKey:false},testResponse=async()=>({ok:true,value:{model:config.model,vision:true}});
   Object.assign(w,{localGet:async key=>structuredClone({[key]:bag[key]}),localSet:async values=>Object.assign(bag,structuredClone(values)),localRemove:async()=>{},courseURL,diagnosticNames,validateModelSettings,modelOrigin,defaultModelSettings});w.setInterval=()=>0;
-  w.chrome={tabs:{query:async q=>structuredClone(q.url?tabs:[tabs.find(t=>t.id===(options.activeId??tabs[0]?.id))||{id:999,url:'https://extension.example/popup.html'}]),get:async id=>{const tab=tabs.find(t=>t.id===id);if(!tab)throw Error('closed');return structuredClone(tab);},sendMessage:async(id,msg)=>{events.push({type:msg.type,tabId:id});return scanResponse(id);}},permissions:{request:async p=>{events.push(structuredClone({type:'PERMISSION',...p}));return allow;}},storage:{local:{get:async()=>({})}},runtime:{sendMessage:async msg=>{
+  w.chrome={tabs:{reload:async id=>{events.push({type:'TAB_RELOAD',tabId:id});if(options.onReload)options.onReload(tabs);},query:async q=>structuredClone(q.url?tabs:[tabs.find(t=>t.id===(options.activeId??tabs[0]?.id))||{id:999,url:'https://extension.example/popup.html'}]),get:async id=>{const tab=tabs.find(t=>t.id===id);if(!tab)throw Error('closed');return structuredClone(tab);},sendMessage:async(id,msg)=>{events.push({type:msg.type,tabId:id});return scanResponse(id);}},permissions:{request:async p=>{events.push(structuredClone({type:'PERMISSION',...p}));return allow;}},storage:{local:{get:async()=>({})}},runtime:{getManifest:()=>({version:'0.3.4'}),sendMessage:async msg=>{
     events.push(structuredClone(msg));
     if(msg.type==='MODEL_TEST')return testResponse();
     if(msg.type==='MODEL_GET')return {ok:true,value:config};
@@ -71,12 +71,33 @@ test('legacy candidates and navigation to another course cannot silently start a
 });
 test('a scan racing with course navigation cannot replace the list with stale results',async t=>{
  const f=await fixture(t,true,{tabs:[courseTabs[0]]});f.scanResponse(()=>{f.tabs[0].url=newURL;return {ok:true,value:oldCandidates.candidates};});
- await f.click('scan');assert.match(f.field('message').textContent,/课程页面发生变化/);assert.equal(f.field('candidates').children.length,0);
+ await f.click('scan');assert.match(f.field('scanMessage').textContent,/课程页面发生变化/);assert.equal(f.field('candidates').children.length,0);
 });
 
 test('a scan may select learning content only within the original course',async t=>{
  const f=await fixture(t,true,{tabs:[courseTabs[0]]});f.scanResponse(()=>{f.tabs[0].url=oldURL+'?tab=content';return {ok:true,value:[{url:f.tabs[0].url,title:'示例视频',targetTitle:'示例视频',kind:'video'}]};});
  await f.click('scan');assert.equal(f.bag.candidateSource.url,oldURL+'?tab=content');await f.click('start');assert.ok(f.events.some(m=>m.type==='START'));
  const other=await fixture(t,true,{tabs:[courseTabs[0]]});other.scanResponse(()=>{other.tabs[0].url=newURL+'?tab=content';return {ok:true,value:[{url:other.tabs[0].url,title:'其他课程',kind:'video'}]};});
- await other.click('scan');assert.match(other.field('message').textContent,/课程页面发生变化/);assert.equal(other.field('candidates').children.length,0);
+ await other.click('scan');assert.match(other.field('scanMessage').textContent,/课程页面发生变化/);assert.equal(other.field('candidates').children.length,0);
+});
+
+test('directory reads show progress and failures beside the scan button',async t=>{
+ const f=await fixture(t);assert.match(f.field('scanMessage').textContent,/0.3.4/);let finish;f.scanResponse(()=>new Promise(resolve=>{finish=resolve;}));
+ const pending=f.click('scan');await new Promise(r=>setImmediate(r));assert.equal(f.field('scan').disabled,true);assert.equal(f.field('scan').textContent,'正在读取…');assert.match(f.field('scanMessage').textContent,/正在读取/);
+ finish({ok:false,error:'未找到学习内容'});await pending;assert.match(f.field('scanMessage').textContent,/未找到学习内容/);assert.equal(f.field('scanMessage').classList.contains('error'),true);assert.equal(f.field('scan').disabled,false);
+});
+test('a non-responsive content script releases the scan button and explains recovery',async t=>{
+ const f=await fixture(t);f.scanResponse(()=>new Promise(()=>{}));f.w.setTimeout=fn=>setImmediate(fn);f.w.clearTimeout=clearImmediate;
+ await f.click('scan');assert.match(f.field('scanMessage').textContent,/12 秒未返回/);assert.equal(f.field('scan').disabled,false);
+});
+
+test('missing content-script receiver reloads the selected directory once and retries',async t=>{
+ const f=await fixture(t);let attempts=0;f.scanResponse(id=>{if(++attempts<3)throw Error('Could not establish connection. Receiving end does not exist.');return {ok:true,value:[{url:f.tabs[0].url,title:'重连视频',kind:'video'}]};});
+ const native=f.w.setTimeout.bind(f.w);f.w.setTimeout=(fn,ms)=>ms===500?setImmediate(fn):native(fn,ms);
+ await f.click('scan');assert.equal(f.events.filter(e=>e.type==='TAB_RELOAD').length,1);assert.equal(f.bag.candidates[0].title,'重连视频');assert.match(f.field('scanMessage').textContent,/已读取/);
+});
+test('reconnection never reloads a homework page or scans a navigated course',async t=>{
+ const quiz=await fixture(t,true,{tabs:[{id:1,url:'https://pro.yuketang.cn/ai-workspace/lms-graph/1/homework/2'}]});quiz.scanResponse(()=>{throw Error('Receiving end does not exist.');});await quiz.click('scan');assert.ok(!quiz.events.some(e=>e.type==='TAB_RELOAD'));
+ const f=await fixture(t,true,{onReload:tabs=>{tabs[0].url=newURL;}});f.scanResponse(()=>{throw Error('Receiving end does not exist.');});const native=f.w.setTimeout.bind(f.w);f.w.setTimeout=(fn,ms)=>ms===500?setImmediate(fn):native(fn,ms);
+ await f.click('scan');assert.match(f.field('scanMessage').textContent,/课程页面已变化/);assert.equal(f.events.filter(e=>e.type==='SCAN').length,1);
 });

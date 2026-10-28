@@ -7,10 +7,12 @@ let candidates=[],candidateSource=null,lastTasks='';
 const phaseName={pending:'排队',opening:'打开单元',running:'运行',verifying:'确认完成',done:'已完成',attention:'需处理',skipped:'已跳过',manual:'手动作答'};
 async function rpc(msg) {const r=await chrome.runtime.sendMessage(msg);if(!r?.ok)throw Error(r?.error||'扩展未响应');return r.value;}
 function message(s,error=false){$('message').textContent=s;$('message').classList.toggle('error',error);}
+function scanMessage(text,error=false){$('scanMessage').textContent=text;$('scanMessage').classList.toggle('error',error);}
 function modelMessage(text,error=false){$('modelMessage').textContent=text;$('modelMessage').classList.toggle('error',error);}
 function bind(id,fn){$(id).onclick=async()=>{const b=$(id),modelAction=['saveModel','testModel','clearModel'].includes(id),label=b.textContent;b.disabled=true;
   if(id==='testModel'){b.textContent='正在测试…';modelMessage('正在测试模型连接与图片输入，最多等待 30 秒…');}
-  try{await fn();}catch(e){(modelAction?modelMessage:message)(e.message,true);}finally{b.disabled=false;b.textContent=label;}};}
+  if(id==='scan'){b.textContent='正在读取…';scanMessage('正在读取所选课程的目录，请稍候…');}
+  try{await fn();}catch(e){(modelAction?modelMessage:id==='scan'?scanMessage:message)(e.message,true);}finally{b.disabled=false;b.textContent=label;}};}
 
 async function saveCandidates(){await localSet({candidates,candidateSource});}
 function renderCandidates(){
@@ -56,15 +58,39 @@ function scanURLAllowed(before,after) {
   from.searchParams.delete('tab');to.searchParams.delete('tab');
   return from.href===to.href;
 }
+async function requestScan(tabId) {
+  let timer;
+  try {
+    return await Promise.race([chrome.tabs.sendMessage(tabId,{type:'SCAN'},{frameId:0}),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('读取目录 12 秒未返回。请确认重新加载扩展后已刷新课程页面，再重试。')),12000);})]);
+  } finally {clearTimeout(timer);}
+}
+const noReceiver=error=>/Receiving end does not exist|Could not establish connection/.test(error.message);
+async function scanCourse(t) {
+  try {return await requestScan(t.id);} catch(error) {
+    if(!noReceiver(error))throw error;
+    if(!/^\/v2\/web\/studentLog\//.test(new URL(t.url).pathname))throw Error('课程页尚未连接扩展。请重新加载扩展、刷新课程页面，并检查扩展是否允许访问 pro.yuketang.cn。');
+    const before=await currentTab();
+    if(before.id!==t.id || directoryURL(before.url)!==directoryURL(t.url))throw Error('课程页面已变化，请重新选择课程后读取。');
+    scanMessage('课程页面尚未连接扩展，正在重新加载目录页并重试…');
+    await chrome.tabs.reload(t.id);
+    for(let retry=0;retry<12;retry++) {
+      await new Promise(resolve=>setTimeout(resolve,500));
+      const after=await currentTab();
+      if(after.id!==t.id || directoryURL(after.url)!==directoryURL(t.url))throw Error('重连期间课程页面已变化，请重新读取。');
+      try {return await requestScan(t.id);} catch(next) {if(!noReceiver(next))throw next;}
+    }
+    throw Error('重连后课程页仍未连接扩展。请检查扩展已启用、允许访问 pro.yuketang.cn，且正在使用正确的 Chrome 和扩展版本。');
+  }
+}
 bind('scan',async()=>{
-  const t=await currentTab();const r=await chrome.tabs.sendMessage(t.id,{type:'SCAN'},{frameId:0});
+  const t=await currentTab();const r=await scanCourse(t);
   if(!r?.ok)throw Error(r?.error||'请刷新雨课堂页面后重试');
   if(!r.value.length)throw Error('未识别到学习单元，请进入学习内容或学习日志并展开章节，或使用单元独立链接');
   const after=await currentTab();
   if(after.id!==t.id || !scanURLAllowed(t.url,after.url) || r.value.some(item=>directoryURL(item.url)!==directoryURL(after.url)))throw Error('收集时课程页面发生变化，请重新读取目录');
   candidates=r.value.map(item=>({...item,selected:!item.completed&&item.kind!=='homework'}));
   candidateSource={mode:'directory',tabId:t.id,url:directoryURL(after.url),title:t.title||'雨课堂课程'};
-  renderCandidates();await saveCandidates();message(`已读取 ${candidateSource.title} 的 ${r.value.length} 个单元，旧待选列表已替换。`);
+  renderCandidates();await saveCandidates();scanMessage(`已读取 ${candidateSource.title} 的 ${r.value.length} 个单元，旧待选列表已替换。`);
 });
 bind('current',async()=>{const t=await currentTab();await add([{url:t.url,title:t.title,targetTitle:''}]);message('当前地址已加入。独立链接结束后需要手动核对完成状态。');});
 bind('add',async()=>{const urls=$('urls').value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean).map(courseURL);await add(urls.map(url=>({url,title:url,targetTitle:''})));$('urls').value='';});
@@ -118,6 +144,7 @@ async function refresh(initial=false){
     $('tasks').append(item);
   }
 }
+scanMessage(`扩展 ${chrome.runtime.getManifest().version} · 请读取所选课程目录`);
 showModelSettings({...defaultModelSettings,hasApiKey:false});
 await rpc({type:'MODEL_GET'}).then(showModelSettings).catch(e=>modelMessage(e.message,true));
 const [saved,origin]=await Promise.all([localGet('candidates'),localGet('candidateSource')]);candidates=saved.candidates||[];candidateSource=origin.candidateSource||null;

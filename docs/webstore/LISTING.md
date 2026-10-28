@@ -1,10 +1,10 @@
 # Chrome Web Store 上架资料
 
-版本：0.3.3。此文件是待提交材料；不代表已提交、获批或上架。
+版本：0.3.4。此文件是待提交材料；不代表已提交、获批或上架。
 
 ## 上传文件与素材
 
-- 上传 `dist/yuketang-webstore-0.3.3.zip`。其根目录直接包含 `manifest.json`，不要上传带 `extension/` 外层文件夹的手动安装包。
+- 上传 `dist/yuketang-webstore-0.3.4.zip`。其根目录直接包含 `manifest.json`，不要上传带 `extension/` 外层文件夹的手动安装包。
 - 图标：`store-icon-128.png`，128×128。
 - 商店截图：`screenshot-queue-1280x800.png`、`screenshot-model-1280x800.png`，1280×800。使用实际界面的示例数据，不连接真实账户或模型。
 - 小宣传图：`promo-440x280.png`，440×280。

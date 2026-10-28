@@ -127,3 +127,15 @@ test('scan excludes non-directory iframe routes even when their DOM has video ca
 test('hidden learning-log panes do not create duplicate title errors',async t=>{
  const f=await fixture(t,row+'<section style="display:none">'+row+'</section>');const r=await f.scan();assert.equal(r.ok,true);assert.equal(r.value.length,1);
 });
+
+test('a player pause interrupting play is transient and the next attempt remains muted',async t=>{
+ const f=await fixture(t,'<video></video>'),v=f.w.document.querySelector('video');let now=Date.now(),plays=0,paused=true;
+ f.w.Date.now=()=>now;Object.defineProperty(v,'paused',{get:()=>paused});v.pause=()=>{paused=true;};v.play=async()=>{if(++plays===1)throw new f.w.DOMException('play interrupted by pause','AbortError');paused=false;};
+ f.state.active=true;await f.tick();assert.ok(!f.messages.some(m=>m.event==='attention'));assert.ok(f.messages.some(m=>/稍后重试/.test(m.note)));assert.equal(v.muted,true);
+ now+=16000;await f.tick();assert.equal(plays,2);assert.equal(paused,false);assert.ok(f.messages.some(m=>m.media?.paused===false));
+});
+test('persistent play interruptions still stop after 45 seconds without advancing time',async t=>{
+ const f=await fixture(t,'<video></video>'),v=f.w.document.querySelector('video');let now=Date.now();f.w.Date.now=()=>now;
+ v.pause=()=>{};v.play=async()=>{throw new f.w.DOMException('pause','AbortError');};f.state.active=true;await f.tick();now+=46000;await f.tick();
+ assert.ok(f.messages.some(m=>m.event==='attention' && /45 秒无进度/.test(m.note)));assert.equal(v.currentTime,0);
+});

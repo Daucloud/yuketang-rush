@@ -1,6 +1,7 @@
 (() => {
   if (globalThis.__yktTileAssistant) return;
   globalThis.__yktTileAssistant = true;
+  document.documentElement.dataset.yktAssistantVersion=chrome.runtime.getManifest?.().version || 'development';
   const topFrame = window === window.top;
   const text = el => (el?.innerText || el?.textContent || '').replace(/\s+/g,' ').trim();
   const visible = el => !!el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
@@ -131,7 +132,7 @@
     if(busy) return; busy=true;
     try {
       const next=await rpc({type:'HELLO'});
-      if(!next.active) { if(context) {await pauseOwned(); show('已暂停或此窗口的任务已结束');} context=null; return; }
+      if(!next.active) { if(context) {await pauseOwned(); show(next.task?.phase==='attention'?next.task.note:'已暂停或此窗口的任务已结束');} context=null; return; }
       context=next;
       const k=context.task.id;
       if(k!==taskKey) { taskKey=k; previous=null; endedAt=0; openingAt=Date.now(); lastAdvance=Date.now(); openClicked=false; }
@@ -192,7 +193,17 @@
       }
       if(v.paused && Date.now()-requestedPlayAt>15000) {
         requestedPlayAt=Date.now(); v.muted=true;
-        try { await startPlayback(v); } catch(error) { v.pause(); await status(error.name==='NotAllowedError'?'浏览器阻止自动播放，请在这个窗口点一次播放':error.message,'attention',media); return; }
+        try { await startPlayback(v); } catch(error) {
+          const fresh=await rpc({type:'HELLO'});
+          if(!fresh.active || fresh.epoch!==context.epoch || fresh.task.id!==task.id) return;
+          if(error.name==='AbortError') {
+            media.paused=v.paused;
+            if(Date.now()-lastAdvance>45000) await status('播放器持续暂停，45 秒无进度；请检查课程窗口可见性、弹窗或网络','attention',media);
+            else await status('播放器中断了启动请求，将稍后重试；请保持课程窗口可见',null,media);
+            return;
+          }
+          v.pause();await status(error.name==='NotAllowedError'?'浏览器阻止自动播放，请在这个窗口点一次播放':error.message,'attention',media);return;
+        }
         const fresh=await rpc({type:'HELLO'});
         if(!fresh.active || fresh.epoch!==context.epoch || fresh.task.id!==context.task.id) { v.pause(); return; }
       }
