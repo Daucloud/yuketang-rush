@@ -38,6 +38,15 @@
     el.scrollIntoView({block:'nearest'});
     el.click();
   }
+  function chooseSpeed(option) {
+    // Some XT player versions select on mouse down. Use the advertised
+    // menu and normal mouse event sequence; never write playbackRate directly.
+    const menu=option.closest('xt-speedbutton');
+    for(const type of ['mouseover','mouseenter']) menu?.dispatchEvent(new MouseEvent(type,{bubbles:type==='mouseover',view:window}));
+    option.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,view:window,button:0,buttons:1}));
+    option.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,view:window,button:0,buttons:0}));
+    option.click();
+  }
   let badge;
   function show(note) {
     if(!topFrame) return;
@@ -189,7 +198,7 @@
       if(v.playbackRate!==config.rate && Date.now()-rateAttemptAt>15000) {
         rateAttemptAt=Date.now();
         const option=all('xt-speedbutton li[data-speed]').find(el=>Number(el.dataset.speed)===config.rate);
-        if(option) click(option);
+        if(option) chooseSpeed(option);
       }
       if(v.paused && Date.now()-requestedPlayAt>15000) {
         requestedPlayAt=Date.now(); v.muted=true;

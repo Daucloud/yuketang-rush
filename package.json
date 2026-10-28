@@ -1,6 +1,6 @@
 {
   "name": "yuketang-rush",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "private": true,
   "description": "雨课堂静音视频队列与整份作业的模型答案建议",
   "license": "MIT",

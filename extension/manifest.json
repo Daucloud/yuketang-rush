@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "雨课堂 · 平铺学习助手",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "静音视频队列与整份作业的模型答案建议，由用户自行作答。",
   "minimum_chrome_version": "120",
   "permissions": [
