@@ -12,20 +12,20 @@
       await Promise.race([v.play(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('播放器启动超过 10 秒，请检查网络后重试')),10000);})]);
     } finally { clearTimeout(timer); }
   }
-  async function armOpen() {
+  async function armOpen(target=window) {
     const token=`${Date.now()}-${Math.random()}`;
     await new Promise((resolve,reject)=>{
       const ready=event=>{
-        if(event.source!==window || event.origin!==location.origin || event.data?.type!=='YKT_OPEN_READY' || event.data.token!==token) return;
+        if(event.source!==target || event.origin!==location.origin || event.data?.type!=='YKT_OPEN_READY' || event.data.token!==token) return;
         clearTimeout(timer);window.removeEventListener('message',ready);resolve();
       };
       const timer=setTimeout(()=>{window.removeEventListener('message',ready);reject(Error('无法启用无弹窗开课，请更新扩展并刷新目录页'));},1500);
       window.addEventListener('message',ready);
-      window.postMessage({type:'YKT_ARM_OPEN',token},location.origin);
+      target.postMessage({type:'YKT_ARM_OPEN',token},location.origin);
     });
     const taskId=context.task.id, epoch=context.epoch;
     const capture=event=>{
-      if(event.source!==window || event.origin!==location.origin || event.data?.type!=='YKT_OPEN_CAPTURED' || event.data.token!==token) return;
+      if(event.source!==target || event.origin!==location.origin || event.data?.type!=='YKT_OPEN_CAPTURED' || event.data.token!==token) return;
       clearTimeout(timer);window.removeEventListener('message',capture);
       rpc({type:'OPEN_UNIT',taskId,epoch,url:event.data.url}).catch(error=>status(error.message,'attention'));
     };
@@ -47,22 +47,52 @@
     }
     badge.textContent=`平铺助手 · ${note}`;
   }
-  async function expand() {
+  async function expand(root=document) {
+    for(const chapter of all('.chapter-list',root)) {
+      const header=chapter.querySelector('.header .pointer'),content=chapter.querySelector('.content');
+      if(visible(header) && content && !visible(content)) {click(header);await delay(200);}
+    }
     for(let round=0;round<12;round++) {
-      const nodes=all('span,button,a,div').filter(el=>visible(el) && text(el)==='展开' && ![...el.children].some(c=>text(c)==='展开'));
+      const nodes=all('span,button,a,div',root).filter(el=>visible(el) && text(el)==='展开' && ![...el.children].some(c=>text(c)==='展开'));
       if(!nodes.length) break;
       click(nodes[0]); await delay(200);
     }
   }
-  // The log page renders each learning unit as a heading and deadline/status row.
-  function rows() {
-    const leaves=all('.leaf-item').flatMap(row=>{
+  // Only the top script coordinates same-origin legacy directories. Task URLs
+  // always remain the outer course URL, including when a child opens the video.
+  function directoryRoots() {
+    const roots=[document];
+    if(topFrame) for(const frame of all('iframe[src]')) {
+      try {
+        const url=new URL(frame.src,location.href);
+        if(visible(frame) && url.origin===location.origin && url.pathname.startsWith('/pro/lms/') && frame.contentDocument) roots.push(frame.contentDocument);
+      } catch { /* Cross-origin frames are not course directories. */ }
+    }
+    return roots;
+  }
+  async function prepareDirectory() {
+    if(topFrame && /\/v2\/web\/studentLog\//.test(location.pathname) && !rows().length && !all('iframe[src*="/pro/lms/"]').some(visible)) {
+      const tab=all('span,button,a,div').find(el=>visible(el) && text(el)==='学习内容' && ![...el.children].some(c=>text(c)==='学习内容'));
+      if(tab) {click(tab);await delay(200);}
+    }
+    for(const root of directoryRoots()) await expand(root);
+  }
+  function rowsIn(root) {
+    const leaves=all('.leaf-item',root).filter(visible).flatMap(row=>{
       const heading=row.querySelector('.leaf-item-title'),title=text(heading),kind=text(row.querySelector('.leaf-item-tag'));
       if(!title || !['视频','作业'].includes(kind)) return [];
       return [{title,row,heading:row,kind:kind==='视频'?'video':'homework',completed:!!row.querySelector('[class*=yuanquangou]'),status:text(row)}];
     });
     if(leaves.length) return leaves;
-    return all('h2').flatMap(h=>{
+    const legacy=all('.leaf-detail',root).filter(visible).flatMap(row=>{
+      const title=text(row.querySelector('.leaf-title .title'));
+      const kind=row.querySelector('.icon--shipin')?'video':row.querySelector('.icon--zuoye')?'homework':null;
+      if(!title || !kind) return [];
+      const progress=text(row.querySelector('.progress-time'));
+      return [{title,row,heading:row,kind,completed:/已完成|(?:^|\s)100\s*%/.test(progress),status:progress}];
+    });
+    if(legacy.length) return legacy;
+    return all('h2',root).filter(visible).flatMap(h=>{
       const title=text(h); if(!title) return [];
       let row=h.parentElement;
       for(let i=0;row && i<5;i++,row=row.parentElement) {
@@ -73,9 +103,12 @@
       return [];
     });
   }
+  function rows() {return directoryRoots().flatMap(rowsIn);}
   async function scan() {
     if(!topFrame) return [];
-    await expand();
+    await prepareDirectory();
+    // Legacy iframe contents may still be loading after selecting 学习内容.
+    for(let retry=0;!rows().length && retry<20;retry++) {await delay(200);await prepareDirectory();}
     const found=rows(), seen=new Set();
     return found.map(r=>{
       if(seen.has(r.title)) throw Error(`目录有同名学习单元「${r.title}」，请改用各单元独立链接`);
@@ -110,7 +143,7 @@
       if(task.phase==='opening' || task.phase==='verifying') {
         if(!topFrame) return;
         if(task.phase==='opening' && location.href!==task.url && (all('video,.problem-body,#iframeExerciseId').length || /\/cloud\/student\//.test(location.pathname))) { await status('学习单元已打开','opened'); return; }
-        await expand();
+        await prepareDirectory();
         const matches=rows().filter(r=>r.title===task.targetTitle);
         if(matches.length!==1) {
           if(Date.now()-openingAt>45000) await status('无法唯一定位学习单元；请检查登录和目录','attention');
@@ -128,7 +161,7 @@
           await status('学习单元已打开','opened');return;
         }
         if(!openClicked) {
-          await armOpen();
+          await armOpen(matches[0].heading.ownerDocument.defaultView);
           const fresh=await rpc({type:'HELLO'});
           if(!fresh.active || fresh.epoch!==context.epoch || fresh.task.id!==task.id) return;
           openClicked=true; click(matches[0].heading); await delay(500);

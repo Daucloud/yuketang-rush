@@ -49,14 +49,21 @@ function add(items){
   for(const item of items){const existing=candidates.find(c=>c.url===item.url && c.targetTitle===item.targetTitle);if(existing)Object.assign(existing,item,{selected:!item.completed&&item.kind!=='homework'});else candidates.push({...item,selected:!item.completed&&item.kind!=='homework'});}
   renderCandidates();return saveCandidates();
 }
+function scanURLAllowed(before,after) {
+  if(directoryURL(before)===directoryURL(after))return true;
+  const from=new URL(directoryURL(before)),to=new URL(directoryURL(after));
+  if(!/^\/v2\/web\/studentLog\//.test(from.pathname) || to.searchParams.get('tab')!=='content')return false;
+  from.searchParams.delete('tab');to.searchParams.delete('tab');
+  return from.href===to.href;
+}
 bind('scan',async()=>{
   const t=await currentTab();const r=await chrome.tabs.sendMessage(t.id,{type:'SCAN'},{frameId:0});
   if(!r?.ok)throw Error(r?.error||'请刷新雨课堂页面后重试');
-  if(!r.value.length)throw Error('未识别到学习单元，请进入学习日志并展开章节，或使用单元独立链接');
+  if(!r.value.length)throw Error('未识别到学习单元，请进入学习内容或学习日志并展开章节，或使用单元独立链接');
   const after=await currentTab();
-  if(after.id!==t.id || directoryURL(after.url)!==directoryURL(t.url) || r.value.some(item=>directoryURL(item.url)!==directoryURL(t.url)))throw Error('收集时课程页面发生变化，请重新读取目录');
+  if(after.id!==t.id || !scanURLAllowed(t.url,after.url) || r.value.some(item=>directoryURL(item.url)!==directoryURL(after.url)))throw Error('收集时课程页面发生变化，请重新读取目录');
   candidates=r.value.map(item=>({...item,selected:!item.completed&&item.kind!=='homework'}));
-  candidateSource={mode:'directory',tabId:t.id,url:directoryURL(t.url),title:t.title||'雨课堂课程'};
+  candidateSource={mode:'directory',tabId:t.id,url:directoryURL(after.url),title:t.title||'雨课堂课程'};
   renderCandidates();await saveCandidates();message(`已读取 ${candidateSource.title} 的 ${r.value.length} 个单元，旧待选列表已替换。`);
 });
 bind('current',async()=>{const t=await currentTab();await add([{url:t.url,title:t.title,targetTitle:''}]);message('当前地址已加入。独立链接结束后需要手动核对完成状态。');});

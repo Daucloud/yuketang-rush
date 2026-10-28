@@ -73,3 +73,10 @@ test('a scan racing with course navigation cannot replace the list with stale re
  const f=await fixture(t,true,{tabs:[courseTabs[0]]});f.scanResponse(()=>{f.tabs[0].url=newURL;return {ok:true,value:oldCandidates.candidates};});
  await f.click('scan');assert.match(f.field('message').textContent,/课程页面发生变化/);assert.equal(f.field('candidates').children.length,0);
 });
+
+test('a scan may select learning content only within the original course',async t=>{
+ const f=await fixture(t,true,{tabs:[courseTabs[0]]});f.scanResponse(()=>{f.tabs[0].url=oldURL+'?tab=content';return {ok:true,value:[{url:f.tabs[0].url,title:'示例视频',targetTitle:'示例视频',kind:'video'}]};});
+ await f.click('scan');assert.equal(f.bag.candidateSource.url,oldURL+'?tab=content');await f.click('start');assert.ok(f.events.some(m=>m.type==='START'));
+ const other=await fixture(t,true,{tabs:[courseTabs[0]]});other.scanResponse(()=>{other.tabs[0].url=newURL+'?tab=content';return {ok:true,value:[{url:other.tabs[0].url,title:'其他课程',kind:'video'}]};});
+ await other.click('scan');assert.match(other.field('message').textContent,/课程页面发生变化/);assert.equal(other.field('candidates').children.length,0);
+});

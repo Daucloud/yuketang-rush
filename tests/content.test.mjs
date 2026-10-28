@@ -12,7 +12,7 @@ async function fixture(t,html,url=home){
   const w=dom.window;let tick,listener;const messages=[];
   let state={active:false,task:{id:'task-1',url:home,title:'课程一',targetTitle:'课程一',phase:'running'},epoch:'epoch',config:{rate:2,autoQA:true}};
   let answer=async()=>({selected:['B'],uncertain:false,explanation:'测试'});
-  w.HTMLElement.prototype.getClientRects=function(){return this.style.display==='none'?[]:[{left:0,top:0,width:100,height:30}];};
+  w.HTMLElement.prototype.getClientRects=function(){for(let el=this;el;el=el.parentElement)if(el.style.display==='none' || el.hidden)return [];return [{left:0,top:0,width:100,height:30}];};
   w.HTMLElement.prototype.scrollIntoView=()=>{};
   w.setInterval=fn=>{tick=fn;};w.setTimeout=fn=>setImmediate(fn);
   w.postMessage=msg=>{if(msg.type==='YKT_ARM_OPEN')w.dispatchEvent(new w.MessageEvent('message',{data:{type:'YKT_OPEN_READY',token:msg.token},origin:new URL(url).origin,source:w}));};
@@ -76,4 +76,54 @@ test('a hidden page still attempts genuine muted playback and reports its real v
   assert.equal(plays,1);assert.equal(v.muted,true);
   assert.ok(f.messages.some(m=>m.media?.visible===false && m.media.paused===false && /页面隐藏/.test(m.note)));
   assert.ok(!f.messages.some(m=>m.event==='attention'));
+});
+
+const legacyRows='<div class="chapter-list"><div class="header"><span class="pointer"><span class="title">示例章节</span></span></div><div class="content"><div class="leaf-detail"><div class="leaf-title"><i class="icon--shipin"></i><span class="title">课程一</span></div><div class="progress-time">1%</div></div><div class="leaf-detail"><div class="leaf-title"><i class="icon--zuoye"></i><span class="title">示例自测</span></div><div class="progress-time">未开始</div></div></div></div>';
+function legacyFrame(f,html=legacyRows) {
+  const frame=f.w.document.querySelector('iframe'),child=frame.contentWindow;
+  child.HTMLElement.prototype.getClientRects=f.w.HTMLElement.prototype.getClientRects;
+  child.HTMLElement.prototype.scrollIntoView=()=>{};
+  frame.contentDocument.open();frame.contentDocument.write('<html><body>'+html+'</body></html>');frame.contentDocument.close();
+  return {frame,child};
+}
+test('legacy iframe scan preserves the outer source and excludes hidden duplicate panes',async t=>{
+  const f=await fixture(t,'<iframe src="/pro/lms/example/1/studycontent"></iframe>');
+  legacyFrame(f,legacyRows+'<section style="display:none">'+legacyRows+'</section>');
+  const r=await f.scan();assert.equal(r.ok,true);assert.equal(r.value.length,2);
+  assert.deepEqual(JSON.parse(JSON.stringify(r.value.map(x=>[x.url,x.kind,x.completed]))),[[home,'video',false],[home,'homework',false]]);
+});
+test('legacy completed videos verify from the iframe directory without clicking or submitting',async t=>{
+  const f=await fixture(t,'<iframe src="/pro/lms/example/1/studycontent"></iframe>');
+  const {child}=legacyFrame(f,legacyRows.replace('1%','100 %'));let clicks=0;child.document.querySelector('.leaf-detail').onclick=()=>clicks++;
+  f.state.active=true;f.state.task.phase='verifying';await f.tick();
+  assert.ok(f.messages.some(m=>m.event==='verified'));assert.equal(clicks,0);
+});
+test('legacy iframe window.open handshake is coordinated by the top worker',async t=>{
+  const f=await fixture(t,'<iframe src="/pro/lms/example/1/studycontent"></iframe>');
+  const {child}=legacyFrame(f);let token,clicks=0;
+  child.postMessage=msg=>{if(msg.type==='YKT_ARM_OPEN'){token=msg.token;f.w.dispatchEvent(new f.w.MessageEvent('message',{data:{type:'YKT_OPEN_READY',token},origin:f.w.location.origin,source:child}));}};
+  child.document.querySelector('.leaf-detail').onclick=()=>{clicks++;f.w.dispatchEvent(new f.w.MessageEvent('message',{data:{type:'YKT_OPEN_CAPTURED',token,url:'https://pro.yuketang.cn/ai-workspace/lms-graph/1/video/2'},origin:f.w.location.origin,source:child}));};
+  f.state.active=true;f.state.task.phase='opening';await f.tick();await f.tick();
+  assert.equal(clicks,1);assert.ok(f.messages.some(m=>m.type==='OPEN_UNIT' && m.taskId==='task-1' && m.url.endsWith('/video/2')));
+});
+test('log scan selects learning content when its units lack deadlines',async t=>{
+  const f=await fixture(t,'<div>学习内容</div><h2>公告</h2>已读');
+  f.w.document.querySelector('div').onclick=()=>{f.w.history.replaceState(null,'',home+'?tab=content');f.w.document.body.insertAdjacentHTML('beforeend',legacyRows);};
+  const r=await f.scan();assert.equal(r.ok,true);assert.equal(r.value.length,2);assert.ok(r.value.every(x=>x.url===home+'?tab=content'));
+});
+test('legacy collapsed chapters expand once and unknown unit icons are excluded',async t=>{
+  const f=await fixture(t,legacyRows.replace('class="content"','class="content" style="display:none"')+'<div class="leaf-detail"><div class="leaf-title"><span class="title">公告</span></div></div>');
+  let clicks=0;f.w.document.querySelector('.pointer').onclick=()=>{clicks++;f.w.document.querySelector('.content').style.display='';};
+  const r=await f.scan();assert.equal(r.value.length,2);assert.equal(clicks,1);
+});
+test('hidden AI workspace duplicates do not prevent scanning visible units',async t=>{
+  const item='<div class="leaf-item"><span class="leaf-item-tag">视频</span><span class="leaf-item-title">课程一</span></div>';
+  const f=await fixture(t,item+'<div hidden>'+item+'</div>');assert.equal((await f.scan()).value.length,1);
+});
+
+test('scan excludes non-directory iframe routes even when their DOM has video cards',async t=>{
+ const f=await fixture(t,'<iframe src="/unrelated/embedded"></iframe>');legacyFrame(f);assert.equal((await f.scan()).value.length,0);
+});
+test('hidden learning-log panes do not create duplicate title errors',async t=>{
+ const f=await fixture(t,row+'<section style="display:none">'+row+'</section>');const r=await f.scan();assert.equal(r.ok,true);assert.equal(r.value.length,1);
 });
