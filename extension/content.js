@@ -39,13 +39,15 @@
     el.click();
   }
   function chooseSpeed(option) {
-    // Some XT player versions select on mouse down. Use the advertised
-    // menu and normal mouse event sequence; never write playbackRate directly.
+    // XT's normal speed-menu click handler requires nonzero movement after
+    // mouseover. Select only an advertised option; never write playbackRate.
     const menu=option.closest('xt-speedbutton');
-    for(const type of ['mouseover','mouseenter']) menu?.dispatchEvent(new MouseEvent(type,{bubbles:type==='mouseover',view:window}));
-    option.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,view:window,button:0,buttons:1}));
-    option.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,view:window,button:0,buttons:0}));
+    if(!menu) return;
+    const rect=menu.getBoundingClientRect(),clientX=rect.left+rect.width/2,clientY=rect.top+rect.height/2;
+    menu.dispatchEvent(new MouseEvent('mouseover',{bubbles:true,view:window,clientX,clientY}));
+    menu.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,view:window,clientX:clientX+1,clientY}));
     option.click();
+    menu.dispatchEvent(new MouseEvent('mouseout',{bubbles:true,view:window,clientX:clientX+1,clientY}));
   }
   let badge;
   function show(note) {

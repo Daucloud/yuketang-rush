@@ -140,9 +140,11 @@ test('persistent play interruptions still stop after 45 seconds without advancin
  assert.ok(f.messages.some(m=>m.event==='attention' && /45 秒无进度/.test(m.note)));assert.equal(v.currentTime,0);
 });
 
-test('advertised speed menus receive mouse-down selection and unsupported rates are not forced',async t=>{
+test('XT speed menus receive movement before selection and unsupported rates are not forced',async t=>{
  const f=await fixture(t,'<video></video><xt-speedbutton><ul><li data-speed="2">2X</li><li data-speed="1">1X</li></ul></xt-speedbutton>'),v=f.w.document.querySelector('video');let selected=0,now=Date.now();f.w.Date.now=()=>now;
- Object.defineProperty(v,'paused',{value:false});f.w.document.querySelector('[data-speed="2"]').addEventListener('mousedown',()=>{selected++;v.playbackRate=2;});
+ Object.defineProperty(v,'paused',{value:false});const menu=f.w.document.querySelector('xt-speedbutton');let origin,travel=0;
+ menu.addEventListener('mouseover',e=>{origin=[e.clientX,e.clientY];});menu.addEventListener('mousemove',e=>{travel=Math.hypot(e.clientX-origin[0],e.clientY-origin[1]);});menu.addEventListener('mouseout',()=>{travel=0;});
+ f.w.document.querySelector('[data-speed="2"]').addEventListener('click',()=>{if(travel>0){selected++;v.playbackRate=2;}});
  f.state.active=true;await f.tick();assert.equal(selected,1);assert.equal(v.playbackRate,2);assert.ok(f.messages.some(m=>m.media?.rate===2));
  f.state.config.rate=1.5;now+=16000;await f.tick();assert.equal(selected,1);assert.equal(v.playbackRate,2);
 });

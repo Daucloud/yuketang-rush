@@ -1,10 +1,10 @@
 # 雨课堂视频队列与作业答案建议
 
-独立 Chrome MV3 扩展：静音视频队列，以及整份作业的模型答案建议。仅适配 `pro.yuketang.cn`，不支持其他雨课堂域名。当前版本 **0.3.5，实验版**。
+独立 Chrome MV3 扩展：静音视频队列，以及整份作业的模型答案建议。仅适配 `pro.yuketang.cn`，不支持其他雨课堂域名。当前版本 **0.3.6，实验版**。
 
 视频队列和 AI 建议均直接在扩展内运行，无需 Node.js、`npm start` 或本地连接口令。AI 建议需要你自己的模型 API key，费用由所配置的提供商收取；请选择支持图片输入的 OpenAI 兼容接口。
 
-[下载当前版本](https://github.com/Daucloud/yuketang-rush/releases/tag/v0.3.5) · [MIT 许可证](LICENSE) · [参与开发](CONTRIBUTING.md) · [隐私政策](PRIVACY.md)
+[下载当前版本](https://github.com/Daucloud/yuketang-rush/releases/tag/v0.3.6) · [MIT 许可证](LICENSE) · [参与开发](CONTRIBUTING.md) · [隐私政策](PRIVACY.md)
 
 ![作业建议侧栏，全部为示例数据](docs/advice-preview.png)
 
@@ -33,7 +33,7 @@
 
 ## 首次安装
 
-1. 从 [Releases](https://github.com/Daucloud/yuketang-rush/releases/tag/v0.3.5) 下载 `yuketang-extension-0.3.5.zip`，解压到固定文件夹。
+1. 从 [Releases](https://github.com/Daucloud/yuketang-rush/releases/tag/v0.3.6) 下载 `yuketang-extension-0.3.6.zip`，解压到固定文件夹。
 2. 在你的 Chrome 打开 `chrome://extensions`，开启「开发者模式」。
 3. 点击「加载已解压的扩展程序」，选择解压后的 `extension` 文件夹。
 4. 登录课程并刷新页面，点击扩展图标打开控制页，读取目录、选择视频并启动队列。
@@ -61,7 +61,7 @@
 
 从旧版升级时无需运行 `npm start`，也无需填写 `BRIDGE_TOKEN`。旧 `.env` 中的模型配置不会自动导入 Chrome，请在设置中填写一次。
 
-源码仍保留旧版 `server.mjs` 与 macOS OCR 模块，供开发测试和兼容性研究；0.3.5 扩展不连接它们。
+源码仍保留旧版 `server.mjs` 与 macOS OCR 模块，供开发测试和兼容性研究；0.3.6 扩展不连接它们。
 
 ## 暂停、缓存与边界
 
@@ -87,8 +87,8 @@ npm test
 node scripts/preview-advice.mjs
 ```
 
-预览地址：`http://127.0.0.1:8767/v2/web/iframe-exercise/1/1`。仅使用示例答案，不连接课程或模型。当前通过 85 项本地自动化测试、模拟界面验证及真实模型的图片连接测试和示例题直接调用。新版自动视频队列尚未完成真实课程端到端验证，不能保证所有页面与后台播放环境均可运行。详见 [更新记录](CHANGELOG.md)。
+预览地址：`http://127.0.0.1:8767/v2/web/iframe-exercise/1/1`。仅使用示例答案，不连接课程或模型。当前通过 85 项本地自动化测试、模拟界面验证及真实模型的图片连接测试和示例题直接调用。已在一门旧版 LMS 实课确认目录读取、自动开课、实际 2×、持续播放、自然结束后返回目录及平台视频「已完成」。这不代表所有页面与后台播放环境都已通过验证。详见 [更新记录](CHANGELOG.md)。
 
 ## Chrome Web Store 上架
 
-商店上架资料、权限用途说明与截图见 [docs/webstore/LISTING.md](docs/webstore/LISTING.md)。商店上传必须使用 `yuketang-webstore-0.3.5.zip`，其根目录直接包含 `manifest.json`。这是待提交的材料，尚未通过商店审核或上架。
+商店上架资料、权限用途说明与截图见 [docs/webstore/LISTING.md](docs/webstore/LISTING.md)。商店上传必须使用 `yuketang-webstore-0.3.6.zip`，其根目录直接包含 `manifest.json`。这是待提交的材料，尚未通过商店审核或上架。
