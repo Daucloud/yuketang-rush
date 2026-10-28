@@ -3,7 +3,7 @@ import {courseURL} from './core.js';
 import {diagnosticNames} from './diagnostics.js';
 import {validateModelSettings,modelOrigin,defaultModelSettings} from './model.js';
 const $=id=>document.getElementById(id);
-let candidates=[],lastTasks='';
+let candidates=[],candidateSource=null,lastTasks='';
 const phaseName={pending:'排队',opening:'打开单元',running:'运行',verifying:'确认完成',done:'已完成',attention:'需处理',skipped:'已跳过',manual:'手动作答'};
 async function rpc(msg) {const r=await chrome.runtime.sendMessage(msg);if(!r?.ok)throw Error(r?.error||'扩展未响应');return r.value;}
 function message(s,error=false){$('message').textContent=s;$('message').classList.toggle('error',error);}
@@ -12,16 +12,53 @@ function bind(id,fn){$(id).onclick=async()=>{const b=$(id),modelAction=['saveMod
   if(id==='testModel'){b.textContent='正在测试…';modelMessage('正在测试模型连接与图片输入，最多等待 30 秒…');}
   try{await fn();}catch(e){(modelAction?modelMessage:message)(e.message,true);}finally{b.disabled=false;b.textContent=label;}};}
 
-async function saveCandidates(){await localSet({candidates});}
+async function saveCandidates(){await localSet({candidates,candidateSource});}
 function renderCandidates(){
+  $('candidateSource').textContent=candidateSource?.mode==='directory'?`已读取目录：${candidateSource.title} · ${candidateSource.url}`:candidateSource?.mode==='manual'?'待选来源：手动添加的单元链接':candidates.length?'历史待选列表，请重新读取目录后再启动。':'尚未读取课程目录';
   $('candidates').replaceChildren();
   candidates.forEach((c,i)=>{const label=document.createElement('label');label.className='candidate';const cb=document.createElement('input');cb.type='checkbox';cb.disabled=c.kind==='homework';cb.checked=!!c.selected&&!cb.disabled;cb.onchange=()=>{candidates[i].selected=cb.checked;saveCandidates();};const span=document.createElement('span');span.textContent=c.title+(c.kind==='homework'?' · 侧边查看答案建议':c.completed?' · 已完成':'');label.append(cb,span);$('candidates').append(label);});
 }
-async function currentTab(){const source=new URL(location.href).searchParams.get('sourceTab');const t=source?await chrome.tabs.get(Number(source)):(await chrome.tabs.query({active:true,currentWindow:true}))[0];if(!t?.url)throw Error('找不到当前标签页');courseURL(t.url);return t;}
+const directoryURL=url=>{const value=new URL(courseURL(url));value.hash='';return value.href;};
+async function loadCourseTabs(initial=false){
+  const selected=$('courseTab').value;
+  const tabs=await chrome.tabs.query({url:'https://pro.yuketang.cn/*'});
+  $('courseTab').replaceChildren();const placeholder=document.createElement('option');placeholder.value='';placeholder.textContent=tabs.length?'请选择要读取的课程标签页':'请先打开并登录雨课堂课程';$('courseTab').append(placeholder);
+  for(const t of tabs){const o=document.createElement('option');o.value=String(t.id);o.textContent=`${t.title||'雨课堂'} · ${new URL(t.url).pathname}`;$('courseTab').append(o);}
+  let preferred=selected;
+  if(initial){
+    const active=(await chrome.tabs.query({active:true,currentWindow:true}))[0];
+    const original=new URL(location.href).searchParams.get('sourceTab');
+    preferred=tabs.some(t=>t.id===active?.id)?String(active.id):original || (tabs.length===1?String(tabs[0].id):'');
+  }
+  $('courseTab').value=tabs.some(t=>String(t.id)===preferred)?preferred:'';
+}
+async function currentTab(){
+  const id=Number($('courseTab').value);if(!id)throw Error('请选择要读取的课程标签页；打开新课程后可刷新标签页列表');
+  let t;try{t=await chrome.tabs.get(id);}catch{throw Error('所选课程标签页已关闭，请刷新标签页列表并重新选择');}
+  courseURL(t.url);return t;
+}
+async function clearCandidates(){candidates=[];candidateSource=null;renderCandidates();await saveCandidates();}
+$('courseTab').onchange=async()=>{try{await clearCandidates();message('已切换课程标签页，请重新读取目录。');}catch(e){message(e.message,true);}};
+bind('refreshCourseTabs',async()=>{await loadCourseTabs();message('课程标签页列表已刷新，请选择要读取的课程。');});
+bind('clearCandidates',async()=>{await clearCandidates();message('待选列表已清空。');});
 bind('dashboard',async()=>{const t=await currentTab().catch(()=>null);await chrome.windows.create({type:'normal',width:900,height:760,url:chrome.runtime.getURL('popup.html')+'?dashboard=1'+(t?'&sourceTab='+t.id:'')});window.close();});
 if(new URL(location.href).searchParams.has('dashboard')){$('dashboard').hidden=true;document.body.style.width='min(900px, 100%)';document.body.style.margin='auto';}
-function add(items){for(const item of items){const existing=candidates.find(c=>c.url===item.url && c.targetTitle===item.targetTitle);if(existing)Object.assign(existing,item,{selected:!item.completed&&item.kind!=='homework'});else candidates.push({...item,selected:!item.completed&&item.kind!=='homework'});}renderCandidates();return saveCandidates();}
-bind('scan',async()=>{const t=await currentTab();const r=await chrome.tabs.sendMessage(t.id,{type:'SCAN'},{frameId:0});if(!r?.ok)throw Error(r?.error||'请刷新雨课堂页面后重试');if(!r.value.length)throw Error('未识别到学习单元，请进入学习日志并展开章节，或使用单元独立链接');await add(r.value);message(`读取到 ${r.value.length} 个学习单元`);});
+function add(items){
+  if(candidateSource?.mode!=='manual')candidates=[];
+  candidateSource={mode:'manual'};
+  for(const item of items){const existing=candidates.find(c=>c.url===item.url && c.targetTitle===item.targetTitle);if(existing)Object.assign(existing,item,{selected:!item.completed&&item.kind!=='homework'});else candidates.push({...item,selected:!item.completed&&item.kind!=='homework'});}
+  renderCandidates();return saveCandidates();
+}
+bind('scan',async()=>{
+  const t=await currentTab();const r=await chrome.tabs.sendMessage(t.id,{type:'SCAN'},{frameId:0});
+  if(!r?.ok)throw Error(r?.error||'请刷新雨课堂页面后重试');
+  if(!r.value.length)throw Error('未识别到学习单元，请进入学习日志并展开章节，或使用单元独立链接');
+  const after=await currentTab();
+  if(after.id!==t.id || directoryURL(after.url)!==directoryURL(t.url) || r.value.some(item=>directoryURL(item.url)!==directoryURL(t.url)))throw Error('收集时课程页面发生变化，请重新读取目录');
+  candidates=r.value.map(item=>({...item,selected:!item.completed&&item.kind!=='homework'}));
+  candidateSource={mode:'directory',tabId:t.id,url:directoryURL(t.url),title:t.title||'雨课堂课程'};
+  renderCandidates();await saveCandidates();message(`已读取 ${candidateSource.title} 的 ${r.value.length} 个单元，旧待选列表已替换。`);
+});
 bind('current',async()=>{const t=await currentTab();await add([{url:t.url,title:t.title,targetTitle:''}]);message('当前地址已加入。独立链接结束后需要手动核对完成状态。');});
 bind('add',async()=>{const urls=$('urls').value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean).map(courseURL);await add(urls.map(url=>({url,title:url,targetTitle:''})));$('urls').value='';});
 let savedModel;
@@ -46,7 +83,11 @@ bind('testModel',async()=>{
   const r=await rpc({type:'MODEL_TEST'});modelMessage(`模型已连接 · ${r.model} · 图片输入测试通过`);
 });
 bind('clearModel',async()=>{await rpc({type:'MODEL_CLEAR'});showModelSettings({...defaultModelSettings,hasApiKey:false});modelMessage('已删除模型设置、密钥和答案缓存。');});
-bind('start',async()=>{await rpc({type:'START',tasks:candidates.filter(c=>c.selected&&c.kind!=='homework'),config:{count:Number($('count').value),rate:Number($('rate').value),displayId:$('display').value,focusWindows:$('focusWindows').checked}});message('静音视频队列已启动。');await refresh();});
+bind('start',async()=>{
+  if(!candidates.some(c=>c.selected&&c.kind!=='homework'))throw Error('请先读取课程目录并选择视频，或手动添加单元链接');
+  if(!candidateSource)throw Error('旧待选列表没有课程来源，请重新读取目录');
+  if(candidateSource.mode==='directory'){const t=await currentTab();if(t.id!==candidateSource.tabId || directoryURL(t.url)!==candidateSource.url)throw Error('课程页面已变化，请重新读取目录后再启动');}
+  await rpc({type:'START',source:candidateSource,tasks:candidates.filter(c=>c.selected&&c.kind!=='homework'),config:{count:Number($('count').value),rate:Number($('rate').value),displayId:$('display').value,focusWindows:$('focusWindows').checked}});message('静音视频队列已启动。');await refresh();});
 for(const [id,type] of [['tile','TILE'],['pause','PAUSE'],['resume','RESUME']])bind(id,async()=>{await rpc({type,...(type==='RESUME'?{focusWindows:$('focusWindows').checked}:{})});message(({TILE:'窗口已重新平铺',PAUSE:'队列已暂停',RESUME:'队列已继续'})[type]);await refresh();});
 bind('reload',async()=>{await rpc({type:'RELOAD'});message('课程窗口已刷新，队列保持暂停；准备好后点击「继续队列」。');await refresh();});
 bind('exportDiagnostics',async()=>{
@@ -60,7 +101,8 @@ bind('exportDiagnostics',async()=>{
 async function refresh(initial=false){
   const state=await rpc({type:'GET'});
   if(initial){for(const d of state.displays){const o=document.createElement('option');o.value=d.id;o.textContent=`${d.name} · ${d.workArea.width}×${d.workArea.height}${d.isPrimary?' · 主屏':''}`;o.selected=d.id===state.config.displayId || (!state.config.displayId&&d.isPrimary);$('display').append(o);}if(state.config.count)$('count').value=state.config.count;if(state.config.rate)$('rate').value=state.config.rate;$('focusWindows').checked=state.config.focusWindows===true;}
-  $('runState').textContent=state.paused?'已暂停':'已启动';const tasksJSON=JSON.stringify(state.tasks);if(tasksJSON===lastTasks)return;lastTasks=tasksJSON;const expanded=new Set([...$('tasks').querySelectorAll('details[open]')].map(d=>d.dataset.taskId));$('tasks').replaceChildren();
+  $('runState').textContent=state.paused?'已暂停（上次启动的队列）':'已启动';
+  $('runOrigin').textContent=state.tasks.length?`队列来源：${state.source?.title||state.tasks[0].url||'上次启动的学习单元'}`:'';const tasksJSON=JSON.stringify(state.tasks);if(tasksJSON===lastTasks)return;lastTasks=tasksJSON;const expanded=new Set([...$('tasks').querySelectorAll('details[open]')].map(d=>d.dataset.taskId));$('tasks').replaceChildren();
   if(!state.tasks.length){$('tasks').textContent='尚未开始队列';return;}
   for(const t of state.tasks){const item=document.createElement('div');item.className='task';const title=document.createElement('b');title.textContent=`${phaseName[t.phase]||t.phase} · ${t.title}`;const note=document.createElement('p');note.textContent=t.note||'';item.append(title,note);
     if(t.mediaSeenAt){const p=document.createElement('p');p.className='hint';p.textContent=`最近观察：${diagnosticNames[t.diagnostic]||'等待观察'} · ${new Date(t.mediaSeenAt).toLocaleTimeString()}${state.paused?'（队列已暂停）':''}`;item.append(p);}
@@ -71,5 +113,9 @@ async function refresh(initial=false){
 }
 showModelSettings({...defaultModelSettings,hasApiKey:false});
 await rpc({type:'MODEL_GET'}).then(showModelSettings).catch(e=>modelMessage(e.message,true));
-const saved=await localGet('candidates');candidates=saved.candidates||[];renderCandidates();await refresh(true).catch(e=>message(e.message,true));
+const [saved,origin]=await Promise.all([localGet('candidates'),localGet('candidateSource')]);candidates=saved.candidates||[];candidateSource=origin.candidateSource||null;
+if(!candidateSource)candidates=[];
+await loadCourseTabs(true).catch(e=>message(e.message,true));
+if(candidateSource?.mode==='directory' && $('courseTab').value){const t=await currentTab().catch(()=>null);if(t && (t.id!==candidateSource.tabId || directoryURL(t.url)!==candidateSource.url))await clearCandidates();}
+renderCandidates();await refresh(true).catch(e=>message(e.message,true));
 setInterval(()=>refresh().catch(()=>{}),2500);

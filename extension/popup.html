@@ -6,8 +6,11 @@
   <div class="row"><button id="pause" class="secondary">暂停全部</button><button id="resume" class="secondary">继续队列</button></div>
   <button id="reload" class="secondary">刷新课程窗口并暂停</button>
   <p id="message" role="status"></p>
-  <section><h2>运行状态 <small id="runState"></small></h2><div id="tasks"></div><button id="exportDiagnostics" class="secondary">导出本地播放记录</button><p class="hint">记录播放时间、可见性和焦点，最多保留每项最近 180 条。平台是否计入进度仍需回查目录。</p></section>
+  <section><h2>运行状态 <small id="runState"></small></h2><p id="runOrigin" class="hint"></p><div id="tasks"></div><button id="exportDiagnostics" class="secondary">导出本地播放记录</button><p class="hint">记录播放时间、可见性和焦点，最多保留每项最近 180 条。平台是否计入进度仍需回查目录。</p></section>
   <section>
+    <label class="course-source">课程标签页<select id="courseTab"><option value="">请选择课程标签页</option></select></label>
+    <div class="row"><button id="refreshCourseTabs" class="secondary">刷新课程标签页</button><button id="clearCandidates" class="secondary">清空待选列表</button></div>
+    <p id="candidateSource" class="hint" role="status"></p>
     <div class="row"><button id="scan">读取当前课程目录</button><button id="current" class="secondary">加入当前单元链接</button></div>
     <p class="hint">在学习日志或学习空间读取目录。默认只选未完成视频；作业在课程页面侧边批量分析，你自行作答。</p>
     <div id="candidates"></div>

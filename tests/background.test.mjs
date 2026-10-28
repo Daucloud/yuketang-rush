@@ -146,3 +146,12 @@ test('saving requires site permission and never reuses the saved key for a diffe
   assert.equal((await f.send({type:'MODEL_SAVE',settings:{...settings,baseURL:'https://other.example/v1',apiKey:''}})).ok,false);
   assert.equal((await localGet('modelConfig')).modelConfig.baseURL,'https://model.example/v1');
 });
+
+test('directory queues reject mixed course sources before opening windows and retain the selected source',async t=>{
+ const f=await fixture(t),other='https://pro.yuketang.cn/v2/web/studentLog/10002';
+ const base={type:'START',source:{mode:'directory',url:home,title:'所选课程'},config:{count:1,rate:2}};
+ const bad=await f.send({...base,tasks:[{url:other,title:'另一课程',targetTitle:'另一视频'}]});
+ assert.equal(bad.ok,false);assert.equal(f.windows.size,0);
+ const good=await f.send({...base,tasks:[{url:home,title:'当前视频',targetTitle:'当前视频'}]});
+ assert.equal(good.ok,true);assert.equal((await f.get()).source.title,'所选课程');
+});

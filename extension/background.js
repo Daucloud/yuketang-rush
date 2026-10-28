@@ -122,13 +122,15 @@ async function control(msg) {
       if (![1,1.25,1.5,2].includes(config.rate)) throw Error('请选择支持的倍速');
       const tasks = msg.tasks.filter(t=>t.kind!=='homework' && !/\/(?:iframe-)?exercise\//.test(t.url)).map(t => ({id:crypto.randomUUID(), url:courseURL(t.url), targetTitle:typeof t.targetTitle === 'string' ? t.targetTitle : '', title:String(t.title || t.targetTitle || t.url).slice(0,300), phase:'pending', note:''}));
       if(!tasks.length) throw Error('请选择视频单元；作业请在页面侧边查看答案建议');
+      const source=msg.source?.mode==='directory'?{mode:'directory',url:courseURL(msg.source.url),title:String(msg.source.title||'雨课堂课程').slice(0,300)}:undefined;
+      if(source && tasks.some(t=>{const a=new URL(t.url),b=new URL(source.url);a.hash='';b.hash='';return a.href!==b.href;}))throw Error('目录队列包含其他课程来源，请重新读取目录');
       const ds = await chrome.system.display.getInfo();
       const d = ds.find(d => d.id === config.displayId) || ds.find(d => d.isPrimary);
       const count = Math.min(config.count,tasks.length);
       const rects = tileRects(d.workArea,count);
       // Stop previous workers before replacing their run identity.
       state.paused=true; await save(); await notifyTabs();
-      state = {epoch:crypto.randomUUID(),paused:false,config,tasks,slots:[]};
+      state = {epoch:crypto.randomUUID(),paused:false,config,tasks,slots:[],...(source?{source}:{})};
       try {
         for (let i=0;i<count;i++) {
           const win = await chrome.windows.create({url:'about:blank',type:'normal',focused:config.focusWindows,...rects[i]});
